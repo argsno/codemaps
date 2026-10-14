@@ -1,0 +1,1083 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>REA 核心架构全解 · 从入门到精通</title>
+<meta name="description" content="REA（Reverse Engineer Anything）核心架构全解：定位、名词表、分层设计、主流程时序、核心机制逐条拆解、扩展点与陷阱、关键文件索引。单文件、离线可读。" />
+<style>
+  :root {
+    --bg: #faf9f6;
+    --surface: #ffffff;
+    --surface-2: #f3f1ec;
+    --ink: #23211d;
+    --ink-2: #4b463e;
+    --muted: #7b746a;
+    --line: #e7e3db;
+    --line-2: #d6d0c5;
+    --accent: #2e5d8a;
+    --accent-soft: #e9f0f6;
+    --fact: #3d6b52;
+    --infer: #8a5c26;
+    --unknown: #6a5b7d;
+    --code-bg: #f4f2ee;
+    --code-ink: #3a3733;
+    --shadow: 0 1px 2px rgba(35, 33, 29, 0.04), 0 8px 24px rgba(35, 33, 29, 0.05);
+    --maxw: 1200px;
+  }
+  [data-theme="dark"] {
+    --bg: #131315;
+    --surface: #1a1a1d;
+    --surface-2: #202024;
+    --ink: #e9e7e3;
+    --ink-2: #c9c5be;
+    --muted: #93908a;
+    --line: #2b2b30;
+    --line-2: #3a3a41;
+    --accent: #7fb0dd;
+    --accent-soft: #1d2a37;
+    --fact: #7db98f;
+    --infer: #d3a15f;
+    --unknown: #b3a3c9;
+    --code-bg: #202024;
+    --code-ink: #d9d5cf;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.35);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+    font-size: 15.5px;
+    line-height: 1.78;
+    text-wrap: pretty;
+    -webkit-font-smoothing: antialiased;
+  }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+  .progress {
+    position: fixed; inset: 0 auto auto 0; height: 3px; width: 0%;
+    background: var(--accent); z-index: 50; transition: width .1s linear;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 268px minmax(0, 1fr);
+    gap: 56px;
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 0 36px;
+  }
+
+  nav.toc {
+    position: sticky; top: 0; align-self: start;
+    max-height: 100vh; overflow-y: auto;
+    padding: 40px 0 40px; font-size: 13px; line-height: 1.5;
+  }
+  nav.toc .brand {
+    display: flex; align-items: baseline; gap: 8px;
+    padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--line);
+  }
+  nav.toc .brand strong { font-size: 14px; letter-spacing: .01em; }
+  nav.toc .brand span { color: var(--muted); font-size: 11.5px; }
+  nav.toc ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  nav.toc ol ol { margin: 4px 0 8px 12px; gap: 1px; }
+  nav.toc a {
+    display: block; color: var(--ink-2); text-decoration: none;
+    padding: 3px 8px; border-radius: 6px; border-left: 2px solid transparent;
+  }
+  nav.toc a:hover { color: var(--ink); background: var(--surface-2); }
+  nav.toc a.active { color: var(--accent); background: var(--accent-soft); }
+  nav.toc .part { margin-top: 12px; font-weight: 620; color: var(--ink); }
+
+  main { min-width: 0; padding: 48px 0 140px; }
+
+  header.cover { padding: 24px 0 40px; border-bottom: 1px solid var(--line); margin-bottom: 40px; }
+  .eyebrow {
+    display: inline-flex; gap: 8px; align-items: center;
+    font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 18px;
+  }
+  .eyebrow::before { content: ""; width: 22px; height: 1px; background: var(--line-2); }
+  h1 { font-size: clamp(30px, 4.2vw, 44px); line-height: 1.2; letter-spacing: -0.02em; margin: 0 0 14px; font-weight: 680; }
+  .subtitle { font-size: 17px; color: var(--ink-2); max-width: 62ch; margin: 0 0 26px; }
+  .meta-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  }
+  .meta-grid div { background: var(--surface); padding: 12px 16px; }
+  .meta-grid dt { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 3px; }
+  .meta-grid dd { margin: 0; font-size: 13.5px; color: var(--ink); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-top: 22px; font-size: 12.5px; color: var(--ink-2); }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+
+  .badge {
+    display: inline-block; font-size: 11px; line-height: 1; padding: 3px 7px; border-radius: 5px;
+    border: 1px solid currentColor; vertical-align: 1.5px; letter-spacing: .02em; white-space: nowrap;
+  }
+  .badge.fact { color: var(--fact); }
+  .badge.infer { color: var(--infer); }
+  .badge.unknown { color: var(--unknown); }
+
+  section { margin: 0 0 56px; }
+  h2 {
+    font-size: 25px; line-height: 1.3; letter-spacing: -0.01em; margin: 0 0 8px; font-weight: 660;
+    padding-top: 18px;
+  }
+  h2 .num { color: var(--muted); font-weight: 500; margin-right: 10px; font-variant-numeric: tabular-nums; }
+  h3 { font-size: 18.5px; margin: 34px 0 8px; font-weight: 640; letter-spacing: -0.005em; }
+  h4 { font-size: 15px; margin: 22px 0 6px; font-weight: 640; color: var(--ink); }
+  p { margin: 10px 0; max-width: 74ch; }
+  .lead { font-size: 16.5px; color: var(--ink-2); max-width: 70ch; }
+  ul, ol { max-width: 74ch; padding-left: 22px; }
+  li { margin: 5px 0; }
+  li > ul, li > ol { margin-top: 5px; }
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  strong { font-weight: 640; }
+
+  .src, code {
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 12.5px;
+  }
+  .src { color: var(--muted); white-space: nowrap; }
+  :not(pre) > code {
+    background: var(--code-bg); color: var(--code-ink);
+    padding: 1.5px 5px; border-radius: 5px; border: 1px solid var(--line);
+  }
+  pre {
+    background: var(--code-bg); color: var(--code-ink);
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; overflow-x: auto; margin: 14px 0 6px; line-height: 1.62;
+  }
+  pre code { background: none; border: 0; padding: 0; }
+  figure { margin: 22px 0; }
+  figcaption { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+
+  table {
+    width: 100%; border-collapse: collapse; margin: 16px 0 8px; font-size: 13.5px; line-height: 1.6;
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  }
+  thead th { background: var(--surface-2); text-align: left; font-weight: 620; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  td code, th code { white-space: nowrap; }
+
+  .callout {
+    border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
+    padding: 14px 16px; margin: 18px 0; box-shadow: var(--shadow);
+  }
+  .callout .label {
+    display: block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 6px;
+  }
+  .callout p:first-of-type { margin-top: 0; }
+  .callout p:last-child { margin-bottom: 0; }
+
+  details.deep {
+    border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
+    padding: 0; margin: 16px 0; overflow: hidden;
+  }
+  details.deep > summary {
+    cursor: pointer; padding: 11px 16px; font-size: 13.5px; font-weight: 600;
+    color: var(--ink-2); list-style: none; display: flex; align-items: center; gap: 8px;
+  }
+  details.deep > summary::-webkit-details-marker { display: none; }
+  details.deep > summary::before { content: "+"; color: var(--muted); font-weight: 500; width: 10px; }
+  details.deep[open] > summary::before { content: "−"; }
+  details.deep[open] > summary { border-bottom: 1px solid var(--line); background: var(--surface-2); }
+  details.deep .body { padding: 6px 16px 14px; }
+
+  .path-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin: 20px 0; }
+  .path-card {
+    border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+    padding: 16px 18px; box-shadow: var(--shadow);
+  }
+  .path-card h4 { margin: 0 0 2px; font-size: 14.5px; }
+  .path-card .time { font-size: 12px; color: var(--muted); margin-bottom: 8px; display: block; }
+  .path-card p { font-size: 13.5px; color: var(--ink-2); margin: 0; }
+
+  .layers { display: flex; flex-direction: column; gap: 8px; }
+  .layer {
+    display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 14px; align-items: baseline;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 11px 14px;
+  }
+  .layer .lname { font-weight: 630; font-size: 13.5px; }
+  .layer .lname em { display: block; font-style: normal; font-size: 11.5px; color: var(--muted); font-weight: 500; }
+  .layer .ldesc { font-size: 13px; color: var(--ink-2); }
+  .layer.inner { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+  .band {
+    margin-top: 10px; border: 1px dashed var(--line-2); border-radius: 10px; padding: 11px 14px;
+    font-size: 13px; color: var(--ink-2);
+  }
+  .band strong { font-size: 13.5px; }
+
+  .seqwrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 6px; }
+  svg.seq { display: block; min-width: 860px; width: 100%; height: auto; }
+  svg.seq text { font-family: -apple-system, "PingFang SC", "Noto Sans SC", sans-serif; }
+  svg.seq .ll { stroke: var(--line-2); stroke-dasharray: 4 5; }
+  svg.seq .life { fill: var(--ink-2); font-size: 12.5px; font-weight: 620; }
+  svg.seq .life-sub { fill: var(--muted); font-size: 10.5px; }
+  svg.seq .msg { font-size: 11.5px; fill: var(--ink); }
+  svg.seq .msg-num { font-size: 10px; fill: var(--muted); }
+  svg.seq .arrow { stroke: var(--ink-2); stroke-width: 1.2; }
+  svg.seq .arrow.acc { stroke: var(--accent); }
+  svg.seq .self { stroke: var(--ink-2); stroke-width: 1.2; fill: none; }
+  svg.seq .frame { fill: var(--surface-2); stroke: var(--line-2); }
+  svg.seq .frame-label { font-size: 11px; fill: var(--muted); }
+
+  .steps { counter-reset: step; list-style: none; padding: 0; max-width: none; }
+  .steps > li {
+    counter-increment: step; position: relative; padding: 0 0 14px 40px; margin: 0;
+    border-left: 1px solid var(--line); margin-left: 13px;
+  }
+  .steps > li:last-child { border-left-color: transparent; padding-bottom: 0; }
+  .steps > li::before {
+    content: counter(step); position: absolute; left: -13px; top: 1px;
+    width: 26px; height: 26px; border-radius: 50%; background: var(--surface);
+    border: 1px solid var(--line-2); color: var(--ink-2);
+    font-size: 12px; display: grid; place-items: center; font-variant-numeric: tabular-nums;
+  }
+  .steps > li.acc::before { border-color: var(--accent); color: var(--accent); }
+  .steps .st { font-weight: 620; }
+  .steps p { margin: 2px 0 0; font-size: 13.5px; color: var(--ink-2); }
+
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; margin: 18px 0; }
+  .card {
+    border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+    padding: 16px 18px; box-shadow: var(--shadow);
+  }
+  .card h4 { margin: 0 0 6px; }
+  .card p { font-size: 13.5px; color: var(--ink-2); margin: 6px 0 0; }
+  .card ul { font-size: 13.5px; color: var(--ink-2); padding-left: 18px; margin: 6px 0 0; }
+
+  .taglist { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+  .tag {
+    font-size: 12px; padding: 3px 9px; border-radius: 999px;
+    border: 1px solid var(--line-2); color: var(--ink-2); background: var(--surface);
+  }
+
+  footer.doc-footer {
+    margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--line);
+    font-size: 12.5px; color: var(--muted); max-width: 74ch;
+  }
+
+  .theme-toggle {
+    position: fixed; top: 14px; right: 16px; z-index: 60;
+    border: 1px solid var(--line-2); background: var(--surface); color: var(--ink-2);
+    border-radius: 8px; font-size: 12px; padding: 5px 10px; cursor: pointer;
+    font-family: inherit;
+  }
+  .theme-toggle:hover { color: var(--ink); }
+
+  @media (max-width: 940px) {
+    .layout { grid-template-columns: 1fr; gap: 0; padding: 0 20px; }
+    nav.toc { position: static; max-height: none; padding: 24px 0 0; }
+    nav.toc ol ol { display: none; }
+    main { padding-top: 8px; }
+  }
+  @media print {
+    :root { --bg: #fff; --surface: #fff; }
+    nav.toc, .theme-toggle, .progress { display: none; }
+    .layout { display: block; max-width: none; padding: 0; }
+    main { padding: 0; }
+    details.deep { break-inside: avoid; }
+    details.deep > summary { list-style: none; }
+    details.deep > .body { display: block; }
+    a { color: inherit; text-decoration: none; }
+    h2 { break-after: avoid; }
+    table, figure, pre { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="progress" id="progress" aria-hidden="true"></div>
+<button class="theme-toggle" id="themeToggle" type="button">切换主题</button>
+
+<div class="layout">
+  <nav class="toc" aria-label="目录">
+    <div class="brand"><strong>REA 架构全解</strong><span>v6.4.0</span></div>
+    <ol>
+      <li><a href="#how-to-read">怎么读这份文档</a></li>
+      <li class="part"><a href="#p1">一 · 入门：这是什么</a></li>
+      <li><ol>
+        <li><a href="#what">1.1 一句话与它解决的问题</a></li>
+        <li><a href="#glossary">1.2 名词表</a></li>
+        <li><a href="#run">1.3 怎么跑起来</a></li>
+        <li><a href="#shape">1.4 全貌：一张图看懂</a></li>
+      </ol></li>
+      <li class="part"><a href="#p2">二 · 设计：为什么长这样</a></li>
+      <li><ol>
+        <li><a href="#layers">2.1 分层与依赖方向</a></li>
+        <li><a href="#wiring">2.2 双适配器与唯一装配点</a></li>
+        <li><a href="#principles">2.3 五条设计原则</a></li>
+      </ol></li>
+      <li class="part"><a href="#p3">三 · 主流程：从启动到结果</a></li>
+      <li><ol>
+        <li><a href="#boot">3.1 启动（MCP 与 CLI）</a></li>
+        <li><a href="#callflow">3.2 一次工具调用的完整生命周期</a></li>
+      </ol></li>
+      <li class="part"><a href="#p4">四 · 核心机制逐条拆解</a></li>
+      <li><ol>
+        <li><a href="#m-session">4.1 BinarySession：唯一活跃目标</a></li>
+        <li><a href="#m-registry">4.2 Provider 选择：确定性、无回退</a></li>
+        <li><a href="#m-snapshot">4.3 快照缓存：什么能回放</a></li>
+        <li><a href="#m-evidence">4.4 Evidence：证据即身份</a></li>
+        <li><a href="#m-unknown">4.5 ResidualUnknown：未知是一等公民</a></li>
+        <li><a href="#m-process">4.6 进程所有权：证明"这是我的"</a></li>
+        <li><a href="#m-bridge">4.7 Bridge：三种引擎的接入形态</a></li>
+        <li><a href="#m-delivery">4.8 MCP 交付：预算、不截断、不可信标记</a></li>
+      </ol></li>
+      <li class="part"><a href="#p5">五 · Provider 与能力地图</a></li>
+      <li class="part"><a href="#p6">六 · 工程化与测试</a></li>
+      <li class="part"><a href="#p7">七 · 精通：扩展与陷阱</a></li>
+      <li><ol>
+        <li><a href="#extend">7.1 新增一个 Provider 的清单</a></li>
+        <li><a href="#traps">7.2 常见误解与陷阱</a></li>
+        <li><a href="#index">7.3 关键文件索引</a></li>
+        <li><a href="#unknowns">7.4 已知的未知</a></li>
+      </ol></li>
+      <li class="part"><a href="#p8">八 · 附录</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="cover">
+      <div class="eyebrow">架构全解 · 只读源码分析</div>
+      <h1>REA：核心架构全解</h1>
+      <p class="subtitle">
+        把十几种逆向工程能力，统一成一套给 AI agent 与终端使用的工具。这份文档从「它是什么」讲到「你可以动手改哪一行」。
+      </p>
+      <dl class="meta-grid">
+        <div><dt>项目</dt><dd>REA / rea-agents</dd></div>
+        <div><dt>版本</dt><dd>6.4.0 · 分支 main · b11fe63bf</dd></div>
+        <div><dt>技术栈</dt><dd>TypeScript (ESM) · Node 22/24/26</dd></div>
+        <div><dt>规模</dt><dd>src/ 1852 个 TS 文件 · 约 41.4 万行</dd></div>
+        <div><dt>分析方法</dt><dd>源码通读 + 分模块调研，全程只读</dd></div>
+        <div><dt>产出日期</dt><dd>2026-10-14</dd></div>
+      </dl>
+      <div class="legend">
+        <span><span class="badge fact">事实</span> 源码/文件/命令可直接验证</span>
+        <span><span class="badge infer">推断</span> 由实现推导，非文档明述</span>
+        <span><span class="badge unknown">未知</span> 未查证，不猜</span>
+      </div>
+    </header>
+
+    <section id="how-to-read">
+      <h2>怎么读这份文档</h2>
+      <p class="lead">三种读法，任选一种；每条结论都标了置信级别，源码位置尽量精确到文件与行。</p>
+      <div class="path-cards">
+        <div class="path-card">
+          <h4>速读 · 摸清轮廓</h4>
+          <span class="time">约 15 分钟</span>
+          <p>读 §1 全部 + §2.1 + §3.2 的时序图 + §7.3 关键文件索引。目标是能向别人解释「REA 是什么、一次调用发生了什么」。</p>
+        </div>
+        <div class="path-card">
+          <h4>通读 · 可以上手</h4>
+          <span class="time">约 1 小时</span>
+          <p>按顺序读 §1–§6。目标是能定位任何功能对应的层与文件，理解每条设计约束的来历。</p>
+        </div>
+        <div class="path-card">
+          <h4>深挖 · 准备改代码</h4>
+          <span class="time">按需</span>
+          <p>通读之后，用 §4 的机制拆解 + §7.1 扩展清单 + §7.2 陷阱，配合展开各节的「深挖」折叠块。</p>
+        </div>
+      </div>
+      <div class="callout">
+        <span class="label">阅读约定</span>
+        <p>正文里的 <span class="src">src/foo/Bar.ts:12</span> 形式是源码位置（相对仓库根）。代码片段为节选，可能省略了错误处理与类型注解，请以源码为准。<span class="badge infer">推断</span> 的结论代表我的归纳，不代表项目官方立场。</p>
+      </div>
+    </section>
+
+    <section id="p1">
+      <h2><span class="num">一</span>入门：这是什么</h2>
+
+      <h3 id="what">1.1 一句话与它解决的问题</h3>
+      <p class="lead">
+        <strong>REA（Reverse Engineer Anything）是一个本地运行的逆向工程工具：同时提供 MCP server 与 CLI 两个入口，让 AI agent 或终端用户对本地目标（二进制、Electron 应用、网页、APK、固件、抓包……）做分析，并让每一条结论都带着「证据」与「不确定性」。</strong>
+        <span class="badge fact">事实</span> <span class="src">README.md:6-8,59-61；package.json:5</span>
+      </p>
+      <p>它要解决的问题可以概括成三句话：</p>
+      <div class="grid2">
+        <div class="card">
+          <h4>① 让 agent「看得懂」目标</h4>
+          <p>没有源码时，功能、协议、数据结构只存在于二进制与运行时里。REA 把它们变成结构化、可引用、可回放的分析结果，交给 agent 去解释与复刻。</p>
+        </div>
+        <div class="card">
+          <h4>② 把十几种引擎统一成一套语义</h4>
+          <p>Hopper / Ghidra / IDA / JADX / Playwright / TShark……每个引擎的协议、生命周期、错误形态都不同。REA 用统一的 Provider 端口、证据模型与会话规则把它们抹平。</p>
+        </div>
+        <div class="card">
+          <h4>③ 让结论可信、可追溯</h4>
+          <p>每条结论是一条 <code>Evidence</code> 记录：谁（provider）、对哪个目标（artifact 摘要）、做了什么（operation+参数）、看到什么（结果）、有什么局限（limitations），以及它来自真实观察还是快照回放。</p>
+        </div>
+      </div>
+      <div class="callout">
+        <span class="label">它不是</span>
+        <p>不是反编译器本身（引擎是别人的）、不是云服务（本地运行、不上传目标）、也不是自动化攻击工具——它只做「理解」，并且把「没弄明白的部分」显式记录下来。 <span class="badge fact">事实</span> <span class="src">README.md FAQ；DISCLAIMER.md</span></p>
+      </div>
+
+      <h3 id="glossary">1.2 名词表</h3>
+      <p>先看这张表，后面所有章节都能对上号。</p>
+      <table>
+        <thead>
+          <tr><th style="width:22%">名词</th><th>含义</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>逆向工程</strong></td><td>在没有（或缺少）源码的情况下理解软件：静态分析读二进制，动态分析观察运行行为。REA 两者都做。</td></tr>
+          <tr><td><strong>伪代码 / 汇编</strong></td><td>反编译产物（接近 C 的伪代码）与机器指令的文本形式；REA 主要返回这两种「代码证据」。</td></tr>
+          <tr><td><strong>符号 / 引用（xref）</strong></td><td>函数与数据的名字，以及「谁调用了谁、谁引用了哪块数据」的关系。是追溯调用链的基础。</td></tr>
+          <tr><td><strong>MCP</strong></td><td>Model Context Protocol：agent 调用外部工具的标准协议。REA 的 MCP server 通过 stdio 与 agent 通信，暴露一批 tools 与 prompts。</td></tr>
+          <tr><td><strong>Tool Contract（工具契约）</strong></td><td>一个 MCP 工具的单一事实源：名字、描述、输入/输出 schema、副作用声明、是否返回目标内容、示例。代码里就是一个 <code>ToolContract</code> 对象。</td></tr>
+          <tr><td><strong>Provider（供应商）</strong></td><td>某一类分析能力的适配器，如 Hopper、Ghidra、IDA、浏览器、JADX。实现统一端口：能声明能力、检查可用性、解析分析剖面、创建客户端执行操作。</td></tr>
+          <tr><td><strong>Bridge（桥）</strong></td><td>注入到外部工具进程内部运行的小程序（Python / Java），把引擎的 API 翻译成 REA 能用的请求-响应协议。</td></tr>
+          <tr><td><strong>Session（会话）</strong></td><td>REA 进程内「当前分析目标」的持有者。同一时刻只有一个活跃目标，所有工具调用都挂在它上面。</td></tr>
+          <tr><td><strong>Evidence（证据）</strong></td><td>一条结构化的观察记录，带语义 ID（内容哈希）、置信度、权威等级、局限与源码位置。它是 REA 的「货币」：工具返回它，账本保存它。</td></tr>
+          <tr><td><strong>ResidualUnknown（残余未知）</strong></td><td>显式登记的「还没搞清的事」，带状态与修订号。防止未知被静默当作「不存在」。</td></tr>
+          <tr><td><strong>Snapshot（快照）</strong></td><td>对某个目标 + 分析剖面，把已发生的查询结果与证据打包，可导入/导出/回放。回放会明确标注「本次未重新执行引擎」。</td></tr>
+          <tr><td><strong>Analysis Profile（分析剖面）</strong></td><td>同一个目标的两次分析可能不同（引擎版本、语言选项、种子文件……）。剖面记录这些参数，参与缓存与快照的身份判定。</td></tr>
+          <tr><td><strong>Capability / Availability</strong></td><td>Provider 声明「我会哪些操作」（Capability）与「我现在能不能用」（Availability，例如缺工具、平台不支持）。</td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="run">1.3 怎么跑起来</h3>
+      <p>两种用法：让 agent 用（注册 MCP），或自己在终端用（CLI）。</p>
+      <pre><code># 给 agent 用：注册 MCP server 并安装配套 skill（支持 Claude Code / Codex / Cursor 等约 25 个客户端）
+npx rea-agents setup
+
+# 终端用：全局安装后使用 rea 命令
+npm install --global rea-agents
+rea --help
+
+# 不走安装，直接跑一条命令（示例：静态分析一个 JS/Electron 应用目录或 ASAR）
+npx -y rea-agents@latest analyze-javascript-application /absolute/path/to/app --json</code></pre>
+      <p class="src">出处：README.md:65-118；package.json:40-43</p>
+      <ul>
+        <li><strong>运行环境</strong>：Node.js <code>^22.19 || ^24.11 || &gt;=26</code> + npm。 <span class="badge fact">事实</span> <span class="src">package.json:44-47</span></li>
+        <li><strong>外部工具自带（BYO）</strong>：Hopper / Ghidra / IDA / JADX / Apktool / TShark / WABT / pwntools 等都不由 REA 安装；只有 Hopper 可以在 setup 时选择安装且必须经过批准。 <span class="badge fact">事实</span> <span class="src">AGENTS.md:24-30；README.md:160-198</span></li>
+        <li><strong>纯静态能力不需要外部引擎</strong>：JavaScript/Electron 静态分析、.NET、Go、Rust、Flutter 等由 REA 自己解析。 <span class="badge fact">事实</span> <span class="src">README.md:167-183</span></li>
+      </ul>
+
+      <h3 id="shape">1.4 全貌：一张图看懂</h3>
+      <p>REA 的代码按「六边形 / 端口-适配器」组织：外层负责与世界打交道，内层负责语义，依赖只向内。先记住下面这张分层图，§2 展开讲为什么。</p>
+      <figure class="diagram">
+        <div class="layers">
+          <div class="layer">
+            <div class="lname">交付适配器<em>Adapters</em></div>
+            <div class="ldesc"><code>src/cli/</code>（一次性 CLI，incur 框架） · <code>src/server/</code> + <code>src/main/</code>（MCP stdio server）。两者共享同一套 application 工作流。</div>
+          </div>
+          <div class="layer">
+            <div class="lname">应用工作流<em>Application</em></div>
+            <div class="ldesc"><code>src/application/</code>：会话（BinarySession）、证据账本、快照缓存、各领域服务（浏览器、安装、诊断、重建账本……）。</div>
+          </div>
+          <div class="layer">
+            <div class="lname">装配<em>Composition</em></div>
+            <div class="ldesc"><code>src/composition/</code>：唯一生产装配点。CLI 与 MCP 用同一份 provider 选择、生命周期与证据语义。</div>
+          </div>
+          <div class="layer">
+            <div class="lname">供应商适配器<em>Providers</em></div>
+            <div class="ldesc"><code>src/hopper/</code> · <code>src/ghidra/</code> · <code>src/ida/</code> · <code>src/browser/</code> · <code>src/android/</code> · <code>src/dotnet/</code> · <code>src/evm/</code> · <code>src/wasm/</code> · <code>src/native/</code>（pwntools）等，每个引擎一个目录。</div>
+          </div>
+          <div class="layer inner">
+            <div class="lname">契约与领域<em>Contracts → Domain</em></div>
+            <div class="ldesc"><code>src/contracts/</code>（对调用者的 Zod schema 与工具契约）→ <code>src/domain/</code>（纯函数、无副作用：Evidence、错误代数、目标身份、快照格式）。<strong>依赖方向到此为止。</strong></div>
+          </div>
+        </div>
+        <div class="band"><strong>横切基座</strong>：<code>src/process/</code>（进程所有权、超时、清理） · <code>src/windows/</code>（Windows 宿主边界） · <code>src/config/</code>（环境校验与快照）——所有层都可以用，但不反过来依赖上层。</div>
+        <figcaption>图 1 · 分层与依赖方向。外层可以依赖内层；内层不认识外层。出处：<span class="src">docs/architecture.mermaid；AGENTS.md:31</span></figcaption>
+      </figure>
+    </section>
+
+    <section id="p2">
+      <h2><span class="num">二</span>设计：为什么长这样</h2>
+
+      <h3 id="layers">2.1 分层与依赖方向</h3>
+      <p>每个目录的规模和职责如下（文件数为粗计，用于感受重心）：</p>
+      <table>
+        <thead>
+          <tr><th style="width:20%">层</th><th style="width:12%">规模</th><th>职责</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>src/domain/</code></td><td>568 文件</td><td>纯函数、无副作用。Evidence 与错误模型、目标身份、快照格式、比较与图算法、未知项。整个项目的「语义字典」。</td></tr>
+          <tr><td><code>src/contracts/</code></td><td>87 文件</td><td>对调用者的输入/输出 schema（Zod）、工具契约（36 个契约数组汇入 <code>TOOL_CONTRACTS</code>）、错误 schema。是 MCP 与 CLI 的公共表面。</td></tr>
+          <tr><td><code>src/application/</code></td><td>319 文件</td><td>跨 provider 的共享工作流：会话、证据、缓存、安装、诊断、各领域服务。</td></tr>
+          <tr><td><code>src/composition/</code></td><td>33 文件</td><td>唯一的生产装配点：工厂、惰性可选 provider、生命周期接线。</td></tr>
+          <tr><td><code>src/*/</code>（provider）</td><td>合计 400+ 文件</td><td>各引擎适配器：hopper 30、ghidra 68、browser 124、ida 33 …… 实现统一端口。</td></tr>
+          <tr><td><code>src/cli/</code> + <code>src/server/</code></td><td>50 + 93</td><td>两个交付适配器：命令注册与 MCP 工具注册。</td></tr>
+          <tr><td><code>src/process/</code> + <code>src/windows/</code></td><td>72 + 若干</td><td>进程与资源所有权基座（见 §4.6）。</td></tr>
+        </tbody>
+      </table>
+      <p><strong>为什么要这么切？</strong> 因为分析能力会不断新增（十几年里攒下二十多种目标类型），而「证据要可信、资源要清理干净、结论要可复现」这几条不变量必须只有一份实现。<span class="badge infer">推断</span></p>
+
+      <h3 id="wiring">2.2 双适配器与唯一装配点</h3>
+      <p>CLI 与 MCP 不是两套系统，而是同一系统的两个门面：两边都走 <code>createBinarySession()</code> 构造同一个会话实现。装配点的注释把这件事写得很直白：</p>
+      <pre><code>// src/composition/binary.ts
+// Compose the target-switching runtime shared directly by CLI and MCP adapters.
+// This is the sole production wiring point, so both adapters share identical
+// provider selection, profile, lifecycle, and Evidence semantics.</code></pre>
+      <p>实践含义：<strong>你在任一门面看到的行为（选择哪个 provider、缓存怎么命中、错误怎么呈现）都必须在另一门面同样成立</strong>。新增能力时，先接 application 端口，再分别注册 CLI 命令与 MCP 工具。 <span class="badge fact">事实</span> <span class="src">src/composition/binary.ts:19-26；src/cli.ts:87-148；src/server/createServer.ts:439-582</span></p>
+
+      <h3 id="principles">2.3 五条设计原则</h3>
+      <p>这五条贯穿全部代码，后面每个机制都是它们的实例。它们是理解 REA「为什么这么做」的钥匙。</p>
+      <table>
+        <thead>
+          <tr><th style="width:20%">原则</th><th>含义</th><th style="width:32%">可验证的证据</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Fail-closed</strong><br /><span class="src">不确定就拒绝</span></td>
+            <td>宁可报错或标未知，也不猜。多个 provider 都可用时报 <code>ambiguous</code> 而不是按优先级挑一个；无法证明所有权就保留并重试，不当作已清理。</td>
+            <td><span class="src">AnalysisProviderRegistry.ts:185-300</span>；<span class="src">AGENTS.md:41-44</span></td>
+          </tr>
+          <tr>
+            <td><strong>证据可追溯</strong><br /><span class="src">结论必须能回放</span></td>
+            <td>每条结论是一条 Evidence：谁、对什么、做了什么、看到什么、有什么局限。回放旧结果时显式降级声明。</td>
+            <td><span class="src">domain/evidence.ts:96-205</span>；<span class="src">AnalysisSnapshotCache.ts:250-270</span></td>
+          </tr>
+          <tr>
+            <td><strong>一个资源一个 owner</strong><br /><span class="src">清理失败要保留</span></td>
+            <td>资源的所有权明确；清理失败的资源留在 pending 里下次重试，并在错误上标 <code>cleanupIncomplete</code>，绝不当成成功。</td>
+            <td><span class="src">BinarySession.ts:494-520</span>；<span class="src">analysisErrorBase.ts:55-100</span></td>
+          </tr>
+          <tr>
+            <td><strong>省 token 优先</strong><br /><span class="src">先省 agent 的上下文</span></td>
+            <td>性能按「agent token → 分析时间 → CPU/内存」排序：返回最小充分答案，提供分页与保留证据引用，而不是把大结果一次性灌给模型。</td>
+            <td><span class="src">AGENTS.md:60-72</span>；<span class="src">server/toolResult.ts</span></td>
+          </tr>
+          <tr>
+            <td><strong>配置只增不改</strong><br /><span class="src">幂等 + 有备份</span></td>
+            <td>setup/卸载对用户配置文件做「先备份、原子写、能回滚」的幂等变更。</td>
+            <td><span class="src">SetupClientConfiguration.ts:219-239</span>；<span class="src">AGENTS.md:24-30</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="p3">
+      <h2><span class="num">三</span>主流程：从启动到结果</h2>
+
+      <h3 id="boot">3.1 启动（MCP 与 CLI）</h3>
+      <p>包入口是一个分发器，按参数把进程交给两条路径之一：</p>
+      <pre><code>rea mcp | rea --mcp   →  dist/mcp/main.js        （源码 src/main.ts）
+rea mcp doctor        →  额外加载 dist/cli-runtime/mcpDoctor.js
+其它参数              →  dist/cli-runtime/cli.js  （源码 src/cli.ts）</code></pre>
+      <p class="src">出处：package.json:40-43；scripts/rea.mjs（全文）</p>
+
+      <h4>MCP 启动序列 <span class="badge fact">事实</span> <span class="src">src/main.ts:50-95</span></h4>
+      <ol class="steps">
+        <li><span class="st">冻结环境快照</span><p><code>snapshotEnvironment(process.env)</code>——运行期间配置不再漂移（Windows 下还处理大小写不敏感的键语义）。</p></li>
+        <li><span class="st">解析配置</span><p><code>parseConfig</code> 用 Zod 校验 <code>REA_*</code> 环境变量；失败只提示「哪个设置不合规」，不回显值。</p></li>
+        <li><span class="st">构造会话</span><p><code>createBinarySession(config, logger, environment)</code>：注册 Hopper / Ghidra / IDA 三个深 provider 与一组惰性辅助 provider（此时<strong>不启动任何引擎</strong>）。</p></li>
+        <li><span class="st">可选：打开预置目标</span><p>若配置里指定了目标路径，调用 <code>session.open()</code>；失败则打印错误并退出，且把已分配的资源清理掉。</p></li>
+        <li><span class="st">启动传输层</span><p><code>serveStdio(() =&gt; createServer(...))</code>：SDK 每次要 server 时现场构造一个（SDK 会丢弃探测用的实例，所以实例集合被跟踪、统一关闭）。</p></li>
+        <li class="acc"><span class="st">登记关闭钩子</span><p>SIGINT / SIGTERM / stdin EOF / close 都走同一套幂等清理：关传输 → 关会话 → 释放 provider。</p></li>
+      </ol>
+
+      <h4>CLI 启动序列 <span class="badge fact">事实</span> <span class="src">src/cli.ts:63-148</span></h4>
+      <p>构造一个 incur <code>Cli</code> 实例，注册 30+ 组命令（setup/doctor、核心分析、各 provider 平台命令、浏览器与运行时观测、证据与产物）。命令执行时按需构造 <code>createDirectAnalysis(environment)</code>——分析命令各自获取并关闭自己的会话，因此 CLI 与 MCP 的差别只在「谁持有会话生命周期」。</p>
+      <div class="callout">
+        <span class="label">注意</span>
+        <p>CLI 的 <code>mcp</code> 子命令<strong>不会</strong>走到这里——分发器在加载 CLI 之前就把它劫持给了 MCP 运行时，避免 CLI 框架在启动时初始化引擎。<span class="badge fact">事实</span> <span class="src">scripts/rea.mjs:9-14；src/cli.ts:60-63 注释</span></p>
+      </div>
+
+      <h3 id="callflow">3.2 一次工具调用的完整生命周期</h3>
+      <p>下面这张时序图是整份文档的核心。以 <code>analyze_function</code>（函数档案）为例，从 agent 发出 <code>tools/call</code> 到拿到带证据引用的回复：</p>
+      <figure class="diagram">
+        <div class="seqwrap">
+          <svg class="seq" viewBox="0 0 900 560" role="img" aria-labelledby="seqTitle seqDesc">
+            <title id="seqTitle">REA 一次 MCP 工具调用的时序图</title>
+            <desc id="seqDesc">Agent 经由 MCP server、BinarySession 会话层、Provider 客户端，到达外部分析引擎，结果回流为 Evidence 并带预算检查返回。</desc>
+            <defs>
+              <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />
+              </marker>
+            </defs>
+
+            <!-- lifelines -->
+            <g>
+              <line class="ll" x1="90" y1="64" x2="90" y2="530" />
+              <line class="ll" x1="290" y1="64" x2="290" y2="530" />
+              <line class="ll" x1="490" y1="64" x2="490" y2="530" />
+              <line class="ll" x1="680" y1="64" x2="680" y2="530" />
+              <line class="ll" x1="850" y1="64" x2="850" y2="530" />
+            </g>
+            <g>
+              <text class="life" x="90" y="40" text-anchor="middle">Agent</text>
+              <text class="life-sub" x="90" y="55" text-anchor="middle">MCP 客户端</text>
+              <text class="life" x="290" y="40" text-anchor="middle">McpServer</text>
+              <text class="life-sub" x="290" y="55" text-anchor="middle">src/server</text>
+              <text class="life" x="490" y="40" text-anchor="middle">BinarySession</text>
+              <text class="life-sub" x="490" y="55" text-anchor="middle">src/application</text>
+              <text class="life" x="680" y="40" text-anchor="middle">Provider Client</text>
+              <text class="life-sub" x="680" y="55" text-anchor="middle">src/hopper 等</text>
+              <text class="life" x="850" y="40" text-anchor="middle">外部引擎</text>
+              <text class="life-sub" x="850" y="55" text-anchor="middle">bridge / MCP</text>
+            </g>
+
+            <!-- 1 -->
+            <text class="msg-num" x="100" y="86">1</text>
+            <line class="arrow acc" x1="96" y1="94" x2="280" y2="94" marker-end="url(#ah)" />
+            <text class="msg" x="120" y="88">tools/call analyze_function</text>
+
+            <!-- 2 -->
+            <text class="msg-num" x="300" y="122">2</text>
+            <line class="arrow acc" x1="296" y1="130" x2="480" y2="130" marker-end="url(#ah)" />
+            <text class="msg" x="316" y="124">withAdmittedAnalysis(持锁 + signal)</text>
+
+            <!-- 3 self -->
+            <text class="msg-num" x="500" y="158">3</text>
+            <path class="self" d="M 496 166 h 60 v 26 h -60" marker-end="url(#ah)" />
+            <text class="msg" x="566" y="172">校验绑定 / 能力 / 快照命中</text>
+
+            <!-- 4 -->
+            <text class="msg-num" x="500" y="216">4</text>
+            <line class="arrow" x1="496" y1="224" x2="670" y2="224" marker-end="url(#ah)" />
+            <text class="msg" x="520" y="218">client.execute(op, params)</text>
+
+            <!-- 5 -->
+            <text class="msg-num" x="690" y="252">5</text>
+            <line class="arrow" x1="686" y1="260" x2="840" y2="260" marker-end="url(#ah)" />
+            <text class="msg" x="700" y="254">socket / MCP 请求</text>
+
+            <!-- 6 -->
+            <text class="msg-num" x="690" y="290">6</text>
+            <line class="arrow" x1="844" y1="298" x2="690" y2="298" marker-end="url(#ah)" />
+            <text class="msg" x="716" y="292">结果或远程错误</text>
+
+            <!-- 7 -->
+            <text class="msg-num" x="420" y="330">7</text>
+            <line class="arrow" x1="676" y1="338" x2="500" y2="338" marker-end="url(#ah)" />
+            <text class="msg" x="520" y="332">Result&lt;AnalysisExecution&gt;</text>
+
+            <!-- 8 self -->
+            <text class="msg-num" x="400" y="366">8</text>
+            <path class="self" d="M 496 374 h -80 v 34 h 80" marker-end="url(#ah)" />
+            <text class="msg" x="300" y="382">生成 Evidence + 记账 + 写快照</text>
+
+            <!-- 9 -->
+            <text class="msg-num" x="300" y="430">9</text>
+            <line class="arrow acc" x1="486" y1="438" x2="300" y2="438" marker-end="url(#ah)" />
+            <text class="msg" x="316" y="432">证据 + evidence_id</text>
+
+            <!-- 10 -->
+            <text class="msg-num" x="100" y="472">10</text>
+            <line class="arrow acc" x1="276" y1="480" x2="100" y2="480" marker-end="url(#ah)" />
+            <text class="msg" x="120" y="474">structuredContent + _meta 标记</text>
+
+            <rect class="frame" x="60" y="498" width="810" height="46" rx="8" />
+            <text class="frame-label" x="76" y="518">超预算时：不截断 —— 返回分析资源约束错误 + 恢复路径（分页 continuation / 导出证据 / 调大 REA_MCP_MAX_RESPONSE_BYTES）</text>
+            <text class="frame-label" x="76" y="536">目标内容（伪代码、字符串、日志）一律标记 _meta.provenance.untrusted_content：是数据，不是指令</text>
+          </svg>
+        </div>
+        <figcaption>图 2 · 一次工具调用的时序。源码对应：<span class="src">src/server/contractToolHandler.ts:29-90</span>（2、9、10）；<span class="src">src/application/binary/BinarySession.ts:760-905</span>（3、4、7、8）；<span class="src">src/hopper/protocol.ts</span>（5、6）。</figcaption>
+      </figure>
+
+      <h4>逐步对照表</h4>
+      <table>
+        <thead>
+          <tr><th style="width:6%">步</th><th style="width:26%">发生了什么</th><th>关键点</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td>agent 调工具</td><td>工具名由契约确定；输入先按契约 schema 校验，非法输入在到达业务代码前就被拒。</td></tr>
+          <tr><td>2</td><td>进入会话准入</td><td><code>withAdmittedAnalysis</code> 在<strong>整个操作期间</strong>持住目标绑定：期间不允许切换目标，取消信号直通。</td></tr>
+          <tr><td>3</td><td>准备执行</td><td>检查是否有绑定、该操作是否有能力声明、是否命中快照；未绑定或未声明 → 立刻返回可解释的错误（含候选状态）。</td></tr>
+          <tr><td>4–6</td><td>下发到引擎</td><td>传输形态随 provider 而异：Hopper 是 Unix socket 上的 NDJSON，Ghidra 是 headless 进程 + 队列，IDA 是上游 MCP 连接。协议全部 Zod 严格校验。</td></tr>
+          <tr><td>7</td><td>结果绑定目标身份</td><td>结果被绑定到目标摘要与 profile 上；callers/callees 这类关系查询如果引擎没报覆盖率，会补上 <code>relationship_coverage: unknown</code>。</td></tr>
+          <tr><td>8</td><td>落账</td><td>可缓存的成功结果 → 生成 Evidence（语义 ID）+ 写入会话账本 + 写快照缓存。三者要么一起提交，要么不提交。</td></tr>
+          <tr><td>9–10</td><td>交付</td><td>服务端做预算检查；超预算不截断，转为带恢复路径的错误；返回目标内容的工具会被打上不可信标记。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="p4">
+      <h2><span class="num">四</span>核心机制逐条拆解</h2>
+      <p class="lead">这一章是「精通」部分的基础。每条机制都回答同一个问题：<strong>它在防什么？</strong> 读完之后，你应该能解释代码里那些看起来"过度小心"的注释。</p>
+
+      <h3 id="m-session">4.1 BinarySession：唯一活跃目标</h3>
+      <p><strong>问题</strong>：分析引擎的状态很重（打开的目标、临时数据库、编辑器光标）。如果允许多个目标并存或并发切换，任何一次切换都可能让正在跑的分析引用已经消失的资源。</p>
+      <p><strong>做法</strong>：进程内只允许一个活跃绑定，所有目标切换串行化，切换时先"排干"在途调用。 <span class="badge fact">事实</span> <span class="src">src/application/binary/BinarySession.ts</span></p>
+      <table>
+        <thead><tr><th style="width:26%">机制</th><th>行为</th></tr></thead>
+        <tbody>
+          <tr><td>单一绑定</td><td>只保留一份 <code>{target, client, profile, route, runId}</code>；没有绑定时的调用返回可解释的选择失败，而不是"随便找一个"。</td></tr>
+          <tr><td>切换串行化</td><td>每次生命周期操作分配一个 generation；切换只等待"本次之前已受理"的调用（<code>#drainCalls</code>），之后的调用排在切换后面。</td></tr>
+          <tr><td>失败回滚</td><td>切换失败时用同一路由<strong>重建</strong>旧目标（新 client + 健康检查）；恢复也失败则把两个错误合成一个 <code>cleanupIncomplete</code> 错误。</td></tr>
+          <tr><td>保留快速路径</td><td>同目标同剖面重开时，先探测底层子进程健康快照；只有 <code>idle / busy</code> 才算活着——<code>unknown</code> 从来不是"健康"的证据。</td></tr>
+          <tr><td>外部变异纪律</td><td>任何可能改动目标的外部命令：先失效缓存与快照，执行，然后<strong>退役当前目标</strong>（要求重新打开）。Ghidra 活跃时直接拒绝这类操作。</td></tr>
+          <tr><td>关闭语义</td><td><code>close()</code> 清空会话记录；<code>closeWithSnapshot(path)</code> 在同一个锁里完成「排水 → 导出快照 → 写文件 → 关闭」。</td></tr>
+        </tbody>
+      </table>
+      <details class="deep">
+        <summary>深挖：为什么"health 返回 ok"不能证明 provider 还活着？</summary>
+        <div class="body">
+          <p>因为绑定给会话的 client 往往是一个<strong>复合对象</strong>（CompositeProvider），它的 <code>health</code> 是无条件成功的——它不真正触达子进程。所以快速路径改看 <code>operationHealthSnapshot()</code>，这个信号才来自真正实例化的子进程。<span class="badge fact">事实</span> <span class="src">BinarySession.ts:869-895 注释</span></p>
+          <p>另外三个状态被刻意排除：<code>exited</code>（已死）、<code>unreachable</code>（够不到）、<code>not_started</code>（启动从未完成——在 Hopper 超时场景下，client 还持有阻塞下一次启动的资源，把它当作活着会跳过退役流程，把"卡死"传给下一次分析）。<span class="badge infer">推断</span>：这是本文件里信息量最大的一段注释，值得原样读一遍。</p>
+        </div>
+      </details>
+
+      <h3 id="m-registry">4.2 Provider 选择：确定性、无回退</h3>
+      <p><strong>问题</strong>：同一台机器上可能同时装着 Hopper 和 Ghidra。如果"按优先级挑一个"，用户看到的结论就取决于安装顺序或注册顺序——这会让结论不可复现。</p>
+      <p><strong>做法</strong>：注册表只做确定性选择，并把"候选状态"完整暴露给调用方。 <span class="badge fact">事实</span> <span class="src">src/application/binary/AnalysisProviderRegistry.ts</span></p>
+      <table>
+        <thead><tr><th style="width:24%">环节</th><th>规则</th></tr></thead>
+        <tbody>
+          <tr><td>注册期校验</td><td>provider ID 唯一、能力声明的 provenance 必须与自身 identity 一致、同一 operation 不得重复声明——违反直接抛 <code>TypeError</code>（启动就失败，不留到运行期）。</td></tr>
+          <tr><td>三档来源</td><td><code>request</code>（调用方显式指定）＞ <code>environment</code>（<code>REA_ANALYSIS_PROVIDER</code>）＞ <code>auto-single-candidate</code>（自动，且<strong>仅当恰好一个候选可用</strong>）。</td></tr>
+          <tr><td>歧义即报错</td><td>自动模式下有多个可用候选 → <code>ambiguous</code> 错误（附每个候选的拒绝原因与诊断），让调用方显式选，而不是替它决定。</td></tr>
+          <tr><td>目标不支持</td><td>能力可用但目标格式/架构不支持 → <code>target_unsupported</code>，同样列出原因（例如"Ghidra v1 无法在导入 universal Mach-O 时强制选定架构，请先瘦身"）。</td></tr>
+          <tr><td>路由组合</td><td>选中的"深 provider"与若干"辅助 provider"合成一个复合 client；深/辅两边的 operation 集合必须<strong>不相交</strong>，否则启动即报错。</td></tr>
+          <tr><td>无绑定兜底</td><td>没有任何深 provider 可用时给出一个空 client：<code>health</code> 正常，其余操作返回「本 provider 集未声明此操作」，而不是崩溃。</td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="m-snapshot">4.3 快照缓存：什么能回放</h3>
+      <p><strong>问题</strong>：同一次调查里，agent 会反复问同一件事（同一个函数的伪代码、同一批引用）。重复调用外部引擎既慢又贵；但错误的复用会让结论失真——尤其当底层数据可能变过。</p>
+      <p><strong>做法</strong>：只有满足一组严格条件的调用才进入会话内缓存；回放时显式标注来源。 <span class="badge fact">事实</span> <span class="src">src/application/binary/AnalysisSnapshotCache.ts</span></p>
+      <ul>
+        <li><strong>键</strong>：目标身份 + 分析剖面 + operation + 参数（规范化后哈希）。三者任一变化，缓存不成立。</li>
+        <li><strong>可缓存判定</strong>：操作不是有状态类（<code>health</code>/<code>current_*</code>/<code>goto_*</code>/<code>list_documents</code>）、不依赖隐式光标（除非显式传了地址）、声明 <code>mutatesArtifact === false</code> 且不改权限、缓存策略不是 <code>live</code>。</li>
+        <li><strong>失效</strong>：声明会改动目标的操作在<strong>下发之前</strong>就让缓存失效——"一次失败的回包无法证明已下发写入被回滚"；外部变异命令同样触发失效（见 4.1）。</li>
+        <li><strong>上限</strong>：primitive 与 workflow 条目合计 10000 条；满了就停止记录（而不是淘汰，保证确定性）。</li>
+        <li><strong>回放标注</strong>：回放结果会附加一条 limitation：「Loaded from a local REA analysis snapshot; this call did not re-run the provider.」并把 subject 的本地路径重绑到当前目标。</li>
+        <li><strong>不记录截断结果</strong>：标记为 <code>referencesTruncated</code> 的结果不写缓存——否则回放会把"截断"当"完整"。</li>
+      </ul>
+      <p>快照还能整体导出/导入（<code>exportAnalysisSnapshot</code> / <code>importAnalysisSnapshot</code>），导入时校验目标与剖面匹配，不匹配直接拒绝（<code>AnalysisSnapshotMismatchError</code>）。 <span class="badge fact">事实</span> <span class="src">src/application/binary/BinarySessionRecords.ts</span></p>
+
+      <h3 id="m-evidence">4.4 Evidence：证据即身份</h3>
+      <p><strong>问题</strong>：如果结论只是"一段 JSON"，agent 无法区分它是真实观察、快照回放还是推测，也无法在后续调用中安全引用它。</p>
+      <p><strong>做法</strong>：把每次观察铸成一条不可变、可校验、可引用的记录。 <span class="badge fact">事实</span> <span class="src">src/domain/evidence.ts</span></p>
+      <table>
+        <thead><tr><th style="width:24%">字段组</th><th>内容与作用</th></tr></thead>
+        <tbody>
+          <tr><td>subject（对象）</td><td>目标身份的规范化投影：sha256、格式（elf/pe/mach-o/asar/…）、架构；<code>local_path</code> 与显示名<strong>不参与身份</strong>，所以换路径不会改变证据 ID。</td></tr>
+          <tr><td>provenance（来源）</td><td>provider 的 id/name/version、analysis_profile（分析剖面）、environment（执行环境）。</td></tr>
+          <tr><td>observation（观察）</td><td>operation、parameters、raw_result（引擎原始表示）、normalized_result（REA 归一化结果）。</td></tr>
+          <tr><td>epistemics（认识论）</td><td><code>confidence</code>：observed / derived / inferred；<code>authority</code>：shipped-artifact / controlled-replay / historical-reference / external-service / analyst-inference。</td></tr>
+          <tr><td>limits（边界）</td><td>limitations 列表、relationship_coverage（关系查询的覆盖率，缺失即 unknown）、locations（地址/文件偏移等源码位置）、evidence_links（派生自哪些证据）。</td></tr>
+        </tbody>
+      </table>
+      <p><strong>身份是怎么算的</strong>：<code>evidence_id = "ev_" + sha256(canonical(语义投影))</code>。解析时重算哈希并拒绝被篡改的 ID；比较时忽略显示字段。证据一旦记录即深冻结（用弱表登记不可变实例，避免重复校验大对象）。 <span class="badge fact">事实</span> <span class="src">evidence.ts:180-260</span></p>
+      <p><strong>账本纪律</strong>：记录是幂等的——同 ID 同内容算重复，同 ID 不同内容<strong>直接报冲突</strong>；整包导入先整体校验再原子合并。 <span class="badge fact">事实</span> <span class="src">src/application/investigation/EvidenceLedger.ts:31-140</span></p>
+      <div class="callout">
+        <span class="label">错误也是证据的一部分</span>
+        <p>分析失败不会丢掉已完成的部分：错误对象可以携带 <code>partialObservation</code>（失败前已获得的观察），交付层会把它作为带引用的部分结果返回；错误本身是 27 种稳定 tag 的联合类型，携带 diagnostics、捕获输出、清理状态，全部经统一投影后才会出现在协议里。 <span class="badge fact">事实</span> <span class="src">src/domain/analysisErrorBase.ts:4-31；src/server/contractToolHandler.ts:52-70</span></p>
+      </div>
+
+      <h3 id="m-unknown">4.5 ResidualUnknown：未知是一等公民</h3>
+      <p><strong>问题</strong>：逆向里最常见的事故不是"没查到"，而是"没查到被当成不存在"。一旦结论写成"目标没有这个功能"，而实际上是没查到，后续所有推理都会建立在错误前提上。</p>
+      <p><strong>做法</strong>：未知项是一个有状态、可查询、可解冻的实体，且必须挂在一条"变异证据"上。<span class="badge fact">事实</span> <span class="src">src/domain/residualUnknown.ts；EvidenceLedger.ts:170-256</span></p>
+      <ul>
+        <li>字段：<code>unknown_id</code>、状态、严重度、领域、修订号与修订摘要、解决方案（含 <code>verified</code> 处置）。</li>
+        <li>更新用<strong>乐观并发</strong>：必须带 <code>expected_revision</code>，不匹配即 <code>revision-conflict</code>。</li>
+        <li>登记与解决都要求附一条证据，且该证据必须真实存在于账本（或与未知项一起原子写入）。</li>
+        <li>查询分页稳定：按 ID 排序，带 <code>next_offset</code>。</li>
+      </ul>
+      <p><span class="badge infer">推断</span>：这套机制让 agent 的"我不确定"有地方可写，也让用户的复查有据可依——它是整个项目"证据文化"的一部分。</p>
+
+      <h3 id="m-process">4.6 进程所有权：证明"这是我的"</h3>
+      <p><strong>问题</strong>：REA 要替用户启动引擎（Hopper、Ghidra、JADX、pwntools……）。清理时如果杀错进程，后果严重；如果漏杀，会留下孤儿进程。PID 会被复用，路径可以被伪造。</p>
+      <p><strong>做法</strong>：用一组可验证的信号建立所有权，清理失败保留所有权重试。 <span class="badge fact">事实</span> <span class="src">src/process/ProcessOwnership.ts</span></p>
+      <table>
+        <thead><tr><th style="width:24%">手段</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>run token</td><td>给每个子进程注入唯一环境变量 <code>REA_PROCESS_RUN_ID</code>；清理与巡检前读回进程环境比对。可读但不匹配 = 不是我的；不可读 = 记 <code>environment-unreadable</code>（是证据，不是"跳过"）。</td></tr>
+          <tr><td>身份夹逼</td><td>读 token 前后各取一次进程启动身份（Linux 用 <code>stat</code> 的 starttime 字段，Darwin 用原生 helper），中途变化即判定失败。</td></tr>
+          <tr><td>基线对照</td><td>启动前记录 pid→身份 基线，扫描时丢弃"身份没变过"的进程。</td></tr>
+          <tr><td>退场竞态</td><td>只有当新快照证明 PID 已消失，才允许把不匹配归因于"进程已退出"；只有"PID 不存在"能消解不可读。</td></tr>
+          <tr><td>清理重试</td><td>清理失败 → 资源留在 pending，下一次关闭/操作前重试；错误上标记 <code>cleanupIncomplete</code> 并保留资源清单。</td></tr>
+          <tr><td>Windows 三件套</td><td>原生 Node-API 插件提供 Job Object 进程所有权、按 DACL 证明的私有目录、以及防重解析点（符号链接）的路径准入；明确声明"不由 taskkill/chmod 推断"。</td></tr>
+        </tbody>
+      </table>
+      <details class="deep">
+        <summary>深挖：为什么 Windows 必须写原生插件？</summary>
+        <div class="body">
+          <p>POSIX 上可以用 <code>mkdtemp</code>（owner-only 目录）和进程组表达所有权；Windows 上没有等价可证明的语义。原生插件做的是：<code>CREATE_SUSPENDED</code> 创建进程后，用 <code>PROC_THREAD_ATTRIBUTE_JOB_LIST</code> <strong>原子地</strong>把进程放进 Job Object（并用 <code>KILL_ON_JOB_CLOSE</code> 保证宿主消失时子进程一起死），创建目录时安装私有 DACL，并用卷序列号 + 文件 ID 做路径准入；句柄带类型标签，伪造或序列化的句柄拿不到权限。 <span class="badge fact">事实</span> <span class="src">native/windows/src/{process.cc,filesystem.cc,addon.cc}</span></p>
+        </div>
+      </details>
+
+      <h3 id="m-bridge">4.7 Bridge：三种引擎的接入形态</h3>
+      <p>外部引擎的进程模型差别很大，REA 的接入方式也不同。理解这张表，就理解了 §4.6 的所有权基座为什么必须存在。</p>
+      <table>
+        <thead>
+          <tr><th style="width:16%">引擎</th><th style="width:26%">接入形态</th><th>要点</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Hopper</strong><br /><span class="src">src/hopper/</span></td>
+            <td>官方 CLI 启动 GUI，向它注入 <code>bootstrap.py</code>（含 token），脚本在 Hopper 的 Python 线程里 exec <code>bridge/hopper_bridge.py</code>（1173 行），通过 Unix socket 说 NDJSON。</td>
+            <td>bootstrap 文件权限 0600、非成功路径一律删除；REA <strong>只拥有短命 launcher helper</strong>，不声称拥有 macOS 创建的 Hopper GUI 进程；同目标已有会话时用目标租约直接拒绝。</td>
+          </tr>
+          <tr>
+            <td><strong>Ghidra</strong><br /><span class="src">src/ghidra/</span></td>
+            <td>Headless 进程 + Java 桥（<code>bridge/ghidra/*.java</code>，主类 4878 行）；使用<strong>临时数据库</strong>，可执行字节不变、不控制 GUI。</td>
+            <td>支持多架构与 Windows P0；语言覆盖要对着已安装语言目录做准入校验；分析种子（seeds）参与 profile；Windows 上还必须过原生能力检查。</td>
+          </tr>
+          <tr>
+            <td><strong>IDA</strong><br /><span class="src">src/ida/</span></td>
+            <td>适配<strong>用户自备</strong>的上游 IDA-MCP（<code>REA_IDA_MCP_CONFIG</code> 指向注册 JSON）：attached（连 GUI）或 headless（由 REA 监管数据库），协议分 native / legacy。</td>
+            <td>配置本身参与 profile 身份（<code>registration_digest</code>）；headless 需要私有运行根可用；不支持 MIPS/RISC-V/PowerPC 与 raw 二进制（提示改用 Ghidra）。</td>
+          </tr>
+        </tbody>
+      </table>
+      <p><span class="badge fact">事实</span> <span class="src">src/hopper/BridgeLauncher.ts:88-100,280-330；src/hopper/protocol.ts；src/ghidra/GhidraProvider.ts；src/ida/IdaProvider.ts</span></p>
+      <div class="callout">
+        <span class="label">协议长什么样</span>
+        <p>Hopper 桥的消息只有两种形状：<code>{id, result}</code> 或 <code>{id, error:{code,message,type}}</code>，另有 progress / diagnostic 事件（事件里的进度会校验 completed ≤ total）。全部 Zod 严格校验，越界即协议错误。 <span class="badge fact">事实</span> <span class="src">src/hopper/protocol.ts:1-80</span></p>
+      </div>
+
+      <h3 id="m-delivery">4.8 MCP 交付：预算、不截断、不可信标记</h3>
+      <p><strong>问题</strong>：agent 的上下文有限；大函数伪代码可能几十万字符。另外，目标内容（字符串、注释、脚本）可能包含针对 agent 的注入指令。</p>
+      <p><strong>做法</strong>：交付层（<code>src/server/toolResult.ts</code> + <code>EvidenceMcpServer.ts</code>）执行三条硬规则：</p>
+      <ul>
+        <li><strong>绝不静默截断</strong>：超出预算（<code>REA_MCP_MAX_RESPONSE_BYTES</code>，默认取 SDK 的 stdio 缓冲上限）时，返回一个「分析资源约束错误」，附带恢复路径——用分页 continuation 读保留证据、导出完整证据、或调大预算。<span class="badge fact">事实</span> <span class="src">toolResult.ts:150-215</span></li>
+        <li><strong>不可信标记</strong>：所有会返回目标内容的工具，其结果（包括失败）都带 <code>_meta.provenance.untrusted_content</code>；server 的 instructions 明确要求 agent 把目标内容当数据、遇注入要报告用户。<span class="badge fact">事实</span> <span class="src">src/server/createServer.ts:145-147；EvidenceMcpServer.ts:230-260</span></li>
+        <li><strong>广告面与执行面分离</strong>：compact 档位下压缩对外广告的输入 schema，但注册给 SDK 的规范 schema 不变；关闭 outputSchema 广告时本地仍然校验结果。<span class="badge fact">事实</span> <span class="src">EvidenceMcpServer.ts:88-130</span></li>
+      </ul>
+      <details class="deep">
+        <summary>深挖：连"错误太大"都被保留成证据</summary>
+        <div class="body">
+          <p>如果一条错误回复本身就超出预算，传输夹层会把<strong>完整的错误投影存进证据账本</strong>，再把回复换成一条小错误，里面带 <code>evidence_reference</code> 和修复建议（"导出这份保留错误"或"重启时调大预算"）。也就是说：在 REA 里，连失败信息都有可追溯的落点。 <span class="badge fact">事实</span> <span class="src">EvidenceMcpServer.ts:262-330</span></p>
+        </div>
+      </details>
+    </section>
+
+    <section id="p5">
+      <h2><span class="num">五</span>Provider 与能力地图</h2>
+      <p class="lead">REA 支持二十多种目标类型。它们按接入方式分成四类——这张表是你判断「某个能力在哪里实现、需要什么前置条件」的索引。</p>
+      <table>
+        <thead>
+          <tr><th style="width:20%">目标类型</th><th style="width:24%">实现位置</th><th style="width:18%">依赖</th><th>可用性条件（要点）</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>原生二进制（深分析）</td><td><code>src/hopper</code> · <code>src/ghidra</code> · <code>src/ida</code></td><td>BYO 引擎（Hopper 可选装）</td><td>三选一可用；目标格式/架构须被该 provider 支持（见 §4.2）。</td></tr>
+          <tr><td>离线 ELF / 崩溃现场</td><td><code>src/native/pwntools</code> · <code>pwndbg</code></td><td>BYO pwntools（可选 GDB/pwndbg）</td><td>Linux x64 + <code>REA_PWNTOOLS_PYTHON</code> 绝对路径。</td></tr>
+          <tr><td>WASM / EVM / SQLite</td><td><code>src/wasm</code> · <code>src/evm</code> · <code>src/sqlite</code></td><td>BYO WABT；内置 EVMole 与 node:sqlite</td><td>WASM 需 WABT 目录；EVM 需 Linux x64；SQLite 需足够新的 Node。</td></tr>
+          <tr><td>Go / Rust 二进制</td><td><code>src/go</code> · <code>src/rust</code></td><td>无（内置解析）</td><td>始终可用；读编译信息、模块与依赖边。</td></tr>
+          <tr><td>.NET 程序集</td><td><code>src/dotnet</code></td><td>无（纯静态）</td><td>始终可用；执行前重算摘要防 TOCTOU。</td></tr>
+          <tr><td>JavaScript / Electron</td><td><code>src/application/javascript</code> · <code>src/artifacts</code> · <code>src/electron</code></td><td>无（子进程解析）</td><td>静态分析开箱可用；运行观察需浏览器可执行文件。</td></tr>
+          <tr><td>网页 / 浏览器</td><td><code>src/browser</code>（124 文件）· <code>src/inspector</code></td><td>Chrome 系浏览器（Playwright/CDP）</td><td>被动观察需可连的浏览器端点；主动场景需 <code>REA_BROWSER_EXECUTABLE</code>。</td></tr>
+          <tr><td>网络抓包</td><td><code>src/browser/history</code>（HAR/SAZ/Qlog）· <code>src/captures</code>（tshark）</td><td>离线文件；或 BYO tshark</td><td>离线解析无依赖；原生抓包需 Linux + tshark + prlimit。</td></tr>
+          <tr><td>Android 应用 / 设备</td><td><code>src/android</code> · <code>src/apktool</code> · <code>src/adb</code></td><td>BYO JADX+JDK / Apktool / adb</td><td>JADX 需绝对路径 JAR + JDK≥17；adb 与 Apktool 走 PATH 或显式配置。</td></tr>
+          <tr><td>Flutter / JEB / Harmony</td><td><code>src/flutter</code> · <code>src/jeb</code></td><td>Flutter 纯静态；JEB 需运行中的 JEB MCP</td><td>JEB 用 <code>REA_JEB_MCP_URL</code> 选择。</td></tr>
+          <tr><td>固件 / 信号 / 录制包</td><td><code>src/firmware</code> · <code>src/signals</code> · <code>src/pcap</code></td><td>BYO binwalk/unblob、sigrok、tshark</td><td>多在 Linux；带 prlimit 资源上限。</td></tr>
+          <tr><td>进程行为 / 调试</td><td><code>src/process</code>（PTY 捕获）· <code>src/gdb</code> · <code>src/rizin</code> · <code>src/cutter</code> · <code>src/frida</code></td><td>BYO gdb/rizin/cutter；Frida 为可选 npm 依赖</td><td>会话类工具自持生命周期，并与会话层协调（外部变异退役目标）。</td></tr>
+        </tbody>
+      </table>
+      <p><span class="badge fact">事实</span> <span class="src">README.md:160-198；package.json 的 verify:* 脚本；各 provider 目录</span></p>
+      <div class="callout">
+        <span class="label">长尾 provider 的统一模板</span>
+        <p>除三个深 provider 外，其余能力每域一个窄端口（<code>inspect / execute / inspectAvailability / close</code>），结构高度同构：<code>XProvider.ts</code> + <code>XConfiguration.ts</code> + <code>XProviderCapabilities.ts</code> + 客户端/传输 + <code>*.test.ts</code>。新增一个目标类型的边际成本，基本就是「发现工具 → 启动并拥有进程 → 校验输出 → 声明可用性」这四件事。<span class="badge infer">推断</span></p>
+      </div>
+    </section>
+
+    <section id="p6">
+      <h2><span class="num">六</span>工程化与测试</h2>
+
+      <h3>构建链 <span class="badge fact">事实</span> <span class="src">package.json:293；scripts/bundle-runtime.mjs:24-36</span></h3>
+      <pre><code>npm run build:cached
+  └─ 依赖检查 → turbo 缓存任务
+       └─ compile：清空 dist → tsc -p tsconfig.build.json（只编 src）
+            └─ bundle-runtime：rolldown 打包，得到
+                 dist/mcp/main.js              ← MCP server 入口
+                 dist/cli-runtime/cli.js 等    ← CLI 入口
+       └─ artifacts:skills：把 .agents/skills/… 生成为包内 skills/</code></pre>
+      <p>依赖全部 external、treeshake 关闭，并重写 <code>import.meta.url</code> 保留模块位置——因为 bridge 脚本定位与 <code>createRequire</code> 依赖真实文件位置。 <span class="badge fact">事实</span></p>
+
+      <h3>生成物与一致性检查 <span class="badge fact">事实</span></h3>
+      <p>项目把「文档、工具目录、许可证清单、证据账本」都当作<strong>生成物</strong>，PR 期用 <code>--check</code> 验证它们与唯一真源（package.json / lock / SKILL.md / src）一致，禁止手改漂移：</p>
+      <div class="taglist">
+        <span class="tag">src/generatedPackageMetadata.ts</span>
+        <span class="tag">skills/**</span>
+        <span class="tag">docs/public/product-catalog.json</span>
+        <span class="tag">docs/error-contract.schema.json</span>
+        <span class="tag">docs/verification/managed-conformance-*.json</span>
+        <span class="tag">.cache/mcp-tool-catalog.json</span>
+      </div>
+
+      <h3>测试分层 <span class="badge fact">事实</span> <span class="src">scripts/lib/test-projects.mjs；vitest.config.ts:20-90</span></h3>
+      <table>
+        <thead><tr><th style="width:22%">项目</th><th style="width:26%">范围</th><th>定位</th></tr></thead>
+        <tbody>
+          <tr><td><code>domain</code> / <code>services</code></td><td>src/domain、src/contracts、src/application</td><td>纯逻辑与端口测试，threads + 共享模块图（不隔离）。</td></tr>
+          <tr><td><code>adapters</code> / <code>composition</code></td><td>各 provider 目录与其装配</td><td>真实实现的行为测试，用 forks 隔离。</td></tr>
+          <tr><td><code>boundary</code> / <code>cli-boundary</code></td><td>tests/boundary/**</td><td>进程级边界：真起子进程、真跑命令。</td></tr>
+          <tr><td><code>mcp-boundary</code></td><td>tests/boundary/mcp/**</td><td>协议级：工具 schema 有效性、生命周期、客户端能力。</td></tr>
+          <tr><td><code>process-boundary</code></td><td>tests/boundary/process/**</td><td>串行执行（共享宿主采样资源）。</td></tr>
+          <tr><td><code>acceptance</code> / <code>conformance</code> / <code>evaluation</code></td><td>tests/*</td><td>验收、契约一致性、用外部 agent 做发布前评估。</td></tr>
+        </tbody>
+      </table>
+
+      <h3>静态守卫（它们防的都是"曾经踩过的坑"）<span class="badge infer">推断</span></h3>
+      <ul>
+        <li><strong>架构守卫</strong> <span class="src">scripts/verify/architecture-guards.mjs:63-100</span>：domain 层禁用 <code>localeCompare</code>（改用统一码点排序）；禁止用 NUL 拼接自由文本做复合键；禁止自研 AST 遍历器；prlimit 参数向量必须集中构造。</li>
+        <li><strong>模块边界</strong>：解析真实 import 目标，守护 domain/contracts 的纯净性与进程捕获等边界。</li>
+        <li><strong>lint / format / 查重 / 死代码</strong>：oxlint（复杂度 20、嵌套 4、文件 500 行）、oxfmt、jscpd、knip。</li>
+        <li><strong>scan:todos</strong>：源码里出现 TODO/FIXME/HACK 直接失败——把"待办"变成必须显式处理的问题。</li>
+      </ul>
+
+      <h3>真实环境验证 <span class="badge fact">事实</span></h3>
+      <p>仓库里另有数十条 <code>verify:*</code> 脚本，针对真实引擎跑端到端验证（Hopper、Ghidra 各架构、IDA、JADX、Apktool、adb、Frida、浏览器、Electron、WASM、EVM、pcaps……）。项目自己在 AGENTS.md 里强调：<strong>模拟 provider 不能证明真实 provider 的行为</strong>。本次分析未运行任何 verify 脚本。 <span class="badge unknown">未知</span> 它们在当前机器上的实际结果。</p>
+    </section>
+
+    <section id="p7">
+      <h2><span class="num">七</span>精通：扩展与陷阱</h2>
+
+      <h3 id="extend">7.1 新增一个 Provider 的清单</h3>
+      <p>假设你要接入一个新引擎（比如某个没被支持的反汇编器）。按依赖方向从内到外做：</p>
+      <ol class="steps">
+        <li class="acc"><span class="st">定义契约与类型</span><p>在 <code>src/contracts/</code> 增加工具契约（名字/描述/输入输出 schema/effects/returnsTargetContent/示例），并接入 <code>TOOL_CONTRACTS</code> 聚合。工具描述要写清"答案是什么、覆盖什么、局限是什么"。</p></li>
+        <li><span class="st">实现领域归一化</span><p>引擎输出 → REA 的统一结果形状；遇到不确定的语义，宁可标 unknown，不要猜（§4.5）。</p></li>
+        <li><span class="st">写 Provider 与 Configuration</span><p>实现 <code>identity / capabilities / inspectAvailability / inspectTargetSupport / resolveAnalysisProfile / createClient</code>；工具发现集中在 <code>XConfiguration.ts</code>，路径类配置强制绝对路径。</p></li>
+        <li><span class="st">客户端与进程所有权</span><p>客户端负责传输与协议校验；启动子进程必须走 <code>src/process/</code>（owner 化进程组 + run token + 超时 + 清理重试）。</p></li>
+        <li><span class="st">装配到 composition</span><p>在 <code>src/composition/</code> 写工厂（构造期零 I/O），可选能力用惰性加载，失败降级为工具级不可用。</p></li>
+        <li><span class="st">注册两个门面</span><p>MCP：在 <code>src/server/register*Tools.ts</code> 绑定契约；CLI：在 <code>src/cli/</code> 注册命令并复用同一 application 服务。</p></li>
+        <li><span class="st">申报可用性</span><p>把"平台 + 环境变量 + 依赖缺失"折算进 availability 投影，并写好人类可读的修复建议（CapabilityInventory 风格）。</p></li>
+        <li><span class="st">测试与真实验证</span><p>同目录单测 + 边界测试；再加一条真实环境 <code>verify:*</code>，否则不算接入完成。</p></li>
+      </ol>
+
+      <h3 id="traps">7.2 常见误解与陷阱</h3>
+      <table>
+        <thead><tr><th style="width:34%">误解</th><th>事实</th></tr></thead>
+        <tbody>
+          <tr><td>"只要有可用 provider 就会自动选一个"</td><td>自动选择仅当<strong>恰好一个候选可用</strong>；多个候选会报 ambiguous，必须显式选择。<span class="src">AnalysisProviderRegistry.ts</span></td></tr>
+          <tr><td>"缓存会悄悄复用旧结果"</td><td>复用必须打上 limitation 明示"本次未重新执行引擎"；且会改动目标的操作在<strong>下发前</strong>就失效缓存。<span class="src">AnalysisSnapshotCache.ts</span></td></tr>
+          <tr><td>"没查到 = 没有"</td><td>REA 用 ResidualUnknown 与 coverage/limitations 表达"没查到"；结论里"不存在"只有被观察覆盖支持时才成立。<span class="src">residualUnknown.ts；docs/mcp-contracts.md</span></td></tr>
+          <tr><td>"health 通过就说明引擎还活着"</td><td>复合 client 的 health 不触达子进程；会话改用 operationHealthSnapshot，且只信 idle/busy。<span class="src">BinarySession.ts:869-895</span></td></tr>
+          <tr><td>"分析失败就没有产出"</td><td>失败可携带部分观察（partialObservation），交付层会把它作为带证据引用的部分结果返回。<span class="src">contractToolHandler.ts:52-70</span></td></tr>
+          <tr><td>"超长结果会被截断"</td><td>绝不截断：转成资源约束错误 + 恢复路径（分页/导出/调大预算）。<span class="src">toolResult.ts:150-215</span></td></tr>
+          <tr><td>"目标内容可以当指令执行"</td><td>目标内容是不可信数据，结果带 <code>untrusted_content</code> 标记；server instructions 明确要求报告注入企图。<span class="src">createServer.ts:145-147</span></td></tr>
+          <tr><td>"Ghidra 会话期间可以顺手改文件"</td><td>Ghidra 活跃时外部变异被直接拒绝——它在临时的分析数据库里可能已有编辑，rebind 会把它们丢掉。<span class="src">BinarySession.ts:383-390</span></td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="index">7.3 关键文件索引</h3>
+      <p>按「你想做什么」查：</p>
+      <table>
+        <thead><tr><th style="width:38%">想做什么 / 想搞懂什么</th><th>先读这个文件</th></tr></thead>
+        <tbody>
+          <tr><td>看一次调用怎么走完全程</td><td><code>src/application/binary/BinarySession.ts</code>（execute 与 open 两段，约 300-900 行）</td></tr>
+          <tr><td>理解结论的数据模型</td><td><code>src/domain/evidence.ts</code>（Evidence schema 与语义 ID）</td></tr>
+          <tr><td>理解错误怎么表达与投影</td><td><code>src/domain/analysisErrorBase.ts</code> + <code>src/domain/analysisErrorProjection.ts</code></td></tr>
+          <tr><td>看工具是怎么注册和交付的</td><td><code>src/server/createServer.ts</code> + <code>src/server/contractToolHandler.ts</code> + <code>src/server/toolResult.ts</code></td></tr>
+          <tr><td>理解 provider 怎么被选中</td><td><code>src/application/binary/AnalysisProviderRegistry.ts</code> + <code>SessionProviderRouter.ts</code></td></tr>
+          <tr><td>理解缓存与快照</td><td><code>src/application/binary/AnalysisSnapshotCache.ts</code> + <code>BinarySessionRecords.ts</code></td></tr>
+          <tr><td>理解证据账本与未知项</td><td><code>src/application/investigation/EvidenceLedger.ts</code></td></tr>
+          <tr><td>理解进程所有权</td><td><code>src/process/ProcessOwnership.ts</code> + <code>src/process/ProviderProcess.ts</code></td></tr>
+          <tr><td>接入新引擎的样板</td><td>照抄一个结构最小的 provider 目录（如 <code>src/flutter/</code> 或 <code>src/wasm/</code>）</td></tr>
+          <tr><td>看装配总图</td><td><code>src/composition/binary.ts</code> + <code>docs/architecture.mermaid</code></td></tr>
+          <tr><td>看懂 CLI 命令面</td><td><code>src/cli.ts</code> + <code>src/cliCommandNames.ts</code></td></tr>
+          <tr><td>真实环境验证怎么跑</td><td><code>package.json</code> 的 <code>verify:*</code> 段 + <code>scripts/</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="unknowns">7.4 已知的未知</h3>
+      <p>诚实记录本次分析没有查证的部分（完整清单见 <code>questions.md</code>）：</p>
+      <ul>
+        <li><span class="badge unknown">未知</span> MCP 工具的<strong>确切数量</strong>：由 <code>src/catalogIdentity.ts</code> 在运行期统计；本次未构建，未取得数字。</li>
+        <li><span class="badge unknown">未知</span> 任何 <code>verify:*</code> 在真实引擎上的通过情况（本次为只读分析，未运行构建与测试）。</li>
+        <li><span class="badge unknown">未知</span> <code>bridge/hopper_bridge.py</code> 完整 operation 分发表、Ghidra 传输帧格式、IDA native 协议差异等实现细节（未逐行读）。</li>
+        <li><span class="badge unknown">未知</span> 快照文件的长期版本兼容/迁移策略。</li>
+        <li><span class="badge infer">推断</span> "会话内之外没有缓存"来自探索结论，未穷尽确认。</li>
+      </ul>
+    </section>
+
+    <section id="p8">
+      <h2><span class="num">八</span>附录</h2>
+      <h3>这份 HTML 的素材来源</h3>
+      <p>本文是把以下笔记（同一目录）重写为面向新读者的版本；每条结论的原始出处见 <code>sources.md</code>：</p>
+      <div class="taglist">
+        <span class="tag">overview.md · 定位/技术栈/如何运行</span>
+        <span class="tag">architecture.md · 分层与主流程</span>
+        <span class="tag">notes/domain.md</span>
+        <span class="tag">notes/application-session.md</span>
+        <span class="tag">notes/mcp-server.md</span>
+        <span class="tag">notes/native-providers.md</span>
+        <span class="tag">notes/javascript-web.md</span>
+        <span class="tag">notes/artifact-providers.md</span>
+        <span class="tag">notes/process-foundation.md</span>
+        <span class="tag">notes/cli-and-engineering.md</span>
+        <span class="tag">questions.md</span>
+        <span class="tag">sources.md</span>
+      </div>
+
+      <h3>数字口径</h3>
+      <ul>
+        <li>文件数与行数：仓库根执行 <code>find src -name '*.ts' | wc -l</code> 等命令统计，未计入 tests/ 与 bridge/。</li>
+        <li>版本/分支：<code>package.json</code> 的 version 与 <code>git log -1</code> 的 HEAD，分析当日快照。</li>
+        <li>"约 25 个客户端"：来自对 <code>SupportedClients.ts</code> 定义表的调研计数。</li>
+      </ul>
+
+      <h3>怎么继续</h3>
+      <ul>
+        <li>想读实现：从 §7.3 索引挑一个文件，对照本文对应机制读。</li>
+        <li>想动手：先在仓库跑 <code>npm ci &amp;&amp; npm run build:cached</code>，再按 §7.1 清单接入。</li>
+        <li>想起新问题：记进同目录的 <code>questions.md</code>。</li>
+      </ul>
+    </section>
+
+    <footer class="doc-footer">
+      <p>REA 核心架构全解 · 基于仓库 <code>/Users/argsno/Projects/rea</code>（main · b11fe63bf）的只读源码分析，产出日期 2026-10-14。文中「事实」均可按所附源码位置复核；「推断」为分析者归纳；「未知」表示未查证。分析过程未修改目标仓库任何文件。</p>
+    </footer>
+  </main>
+</div>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var toggle = document.getElementById("themeToggle");
+    var stored = null;
+    try { stored = localStorage.getItem("rea-arch-theme"); } catch (e) { stored = null; }
+    if (stored === "dark" || stored === "light") {
+      root.setAttribute("data-theme", stored);
+    } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      root.setAttribute("data-theme", "dark");
+    }
+    if (toggle) {
+      toggle.addEventListener("click", function () {
+        var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+        root.setAttribute("data-theme", next);
+        try { localStorage.setItem("rea-arch-theme", next); } catch (e) { /* 忽略隐私模式下的写入失败 */ }
+      });
+    }
+
+    var bar = document.getElementById("progress");
+    var doc = document.documentElement;
+    function onScroll() {
+      if (!bar) return;
+      var max = doc.scrollHeight - window.innerHeight;
+      var ratio = max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
+      bar.style.width = (ratio * 100).toFixed(2) + "%";
+    }
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    onScroll();
+
+    var links = Array.prototype.slice.call(document.querySelectorAll("nav.toc a[href^='#']"));
+    var byId = {};
+    links.forEach(function (link) {
+      byId[link.getAttribute("href").slice(1)] = link;
+    });
+    if ("IntersectionObserver" in window) {
+      var seen = {};
+      var observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) seen[entry.target.id] = true;
+          else delete seen[entry.target.id];
+        });
+        var ids = Object.keys(seen);
+        links.forEach(function (link) { link.classList.remove("active"); });
+        if (ids.length > 0) {
+          var target = byId[ids[0]];
+          if (target) target.classList.add("active");
+        }
+      }, { rootMargin: "-72px 0px -70% 0px", threshold: 0 });
+      Object.keys(byId).forEach(function (id) {
+        var node = document.getElementById(id);
+        if (node) observer.observe(node);
+      });
+    }
+  })();
+</script>
+</body>
+</html>

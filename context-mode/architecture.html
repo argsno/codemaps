@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>context-mode 核心架构全解</title>
+<style>
+  :root {
+    --paper: #fbfaf7;
+    --paper-2: #f3f1ea;
+    --ink: #191c22;
+    --ink-2: #3d434e;
+    --ink-3: #6b7280;
+    --hair: #d9d6cc;
+    --hair-2: #c4c0b4;
+    --accent: #2b52c9;
+    --accent-soft: #e8edfa;
+    --fact: #166f45;
+    --fact-bg: #e3f2e9;
+    --infer: #92590a;
+    --infer-bg: #f8eed9;
+    --unknown: #5b6472;
+    --unknown-bg: #e9eaee;
+    --code-bg: #eef0f4;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, "SF Pro Text", "PingFang SC", "Noto Sans SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #14161a;
+      --paper-2: #1b1e24;
+      --ink: #e8e6df;
+      --ink-2: #c2c0b8;
+      --ink-3: #8b909a;
+      --hair: #2e323a;
+      --hair-2: #3d424c;
+      --accent: #8ab0ff;
+      --accent-soft: #1e2839;
+      --fact: #7fd0a2; --fact-bg: #16281d;
+      --infer: #e4b96a; --infer-bg: #2b2313;
+      --unknown: #a3aab6; --unknown-bg: #23262d;
+      --code-bg: #1f232a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.75;
+    text-wrap: pretty;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; text-underline-offset: 3px; }
+  code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    background: var(--code-bg);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+    word-break: break-all;
+  }
+  pre {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    background: var(--code-bg);
+    border: 1px solid var(--hair);
+    padding: 14px 16px;
+    overflow-x: auto;
+    border-radius: 4px;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+
+  /* ── layout ─────────────────────────────── */
+  .layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); max-width: 1240px; margin: 0 auto; gap: 0; }
+  nav.toc {
+    position: sticky; top: 0; align-self: start;
+    height: 100vh; overflow-y: auto;
+    padding: 34px 20px 40px 28px;
+    border-right: 1px solid var(--hair);
+    font-size: 13px; line-height: 1.5;
+  }
+  nav.toc .toc-brand { font-weight: 700; font-size: 14px; letter-spacing: 0.01em; margin-bottom: 4px; }
+  nav.toc .toc-sub { color: var(--ink-3); font-size: 11.5px; font-family: var(--mono); margin-bottom: 18px; }
+  nav.toc ol { list-style: none; margin: 0; padding: 0; }
+  nav.toc > ol > li { margin-bottom: 9px; }
+  nav.toc li a { color: var(--ink-2); display: block; }
+  nav.toc li a:hover { color: var(--accent); text-decoration: none; }
+  nav.toc .toc-num { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-right: 7px; }
+  nav.toc ol ol { padding-left: 22px; margin-top: 4px; }
+  nav.toc ol ol li { margin-bottom: 3px; font-size: 12.5px; }
+  @media (max-width: 980px) {
+    .layout { grid-template-columns: 1fr; }
+    nav.toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--hair); padding: 20px 24px; }
+    nav.toc > ol { columns: 2; column-gap: 28px; }
+  }
+
+  main { padding: 44px 52px 90px; min-width: 0; }
+  @media (max-width: 980px) { main { padding: 30px 24px 70px; } }
+
+  /* ── masthead ───────────────────────────── */
+  header.mast { margin-bottom: 40px; }
+  .kicker { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin-bottom: 12px; }
+  h1 { font-size: clamp(28px, 4vw, 40px); line-height: 1.2; margin: 0 0 14px; letter-spacing: -0.015em; }
+  .lede { font-size: 17.5px; color: var(--ink-2); max-width: 46em; margin: 0 0 22px; }
+  .meta-strip { display: flex; flex-wrap: wrap; gap: 8px 22px; border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); padding: 10px 0; font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+  .meta-strip b { color: var(--ink-2); font-weight: 600; }
+
+  /* ── headings ───────────────────────────── */
+  section { margin-bottom: 58px; }
+  h2 {
+    font-size: 24px; line-height: 1.3; margin: 0 0 8px; letter-spacing: -0.01em;
+    padding-top: 14px;
+  }
+  h2 .h2num { font-family: var(--mono); font-size: 15px; color: var(--accent); margin-right: 10px; }
+  h2 + .h2note { color: var(--ink-3); font-size: 13.5px; margin: 0 0 20px; }
+  h3 { font-size: 17.5px; margin: 30px 0 8px; letter-spacing: 0; }
+  h4 { font-size: 15.5px; margin: 22px 0 6px; }
+  p { margin: 0 0 14px; max-width: 62em; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 16px; padding-left: 1.45em; max-width: 62em; }
+  li { margin-bottom: 6px; overflow-wrap: anywhere; }
+  li > ul, li > ol { margin-top: 6px; }
+  hr.rule { border: none; border-top: 1px solid var(--hair); margin: 34px 0; }
+
+  /* ── tags (fact / inference / unknown) ─── */
+  .tag { display: inline-block; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.04em; padding: 0.1em 0.55em; border-radius: 3px; vertical-align: 0.12em; white-space: nowrap; }
+  .tag-f { color: var(--fact); background: var(--fact-bg); }
+  .tag-i { color: var(--infer); background: var(--infer-bg); }
+  .tag-u { color: var(--unknown); background: var(--unknown-bg); }
+  .inline-src { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
+
+  /* ── callouts & cards ───────────────────── */
+  .note { background: var(--paper-2); border: 1px solid var(--hair); padding: 14px 18px; margin: 0 0 18px; font-size: 14.5px; border-radius: 4px; }
+  .note .note-t { font-family: var(--mono); font-weight: 600; font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); display: block; margin-bottom: 4px; }
+  .legend-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 20px 0 8px; }
+  .legend-item { border: 1px solid var(--hair); padding: 12px 14px; font-size: 13.5px; line-height: 1.6; border-radius: 4px; }
+  .legend-item .tag { margin-right: 6px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 18px 0; }
+  .card { border: 1px solid var(--hair); border-radius: 4px; padding: 16px 18px; }
+  .card h4 { margin: 0 0 6px; font-size: 15px; }
+  .card p { margin: 0 0 8px; font-size: 14px; color: var(--ink-2); }
+  .card p:last-child { margin-bottom: 0; }
+
+  /* ── tables ─────────────────────────────── */
+  .table-wrap { overflow-x: auto; margin: 16px 0 20px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; line-height: 1.55; }
+  th { text-align: left; font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; border-bottom: 1.5px solid var(--ink-2); padding: 8px 12px 8px 0; white-space: nowrap; }
+  td { border-bottom: 1px solid var(--hair); padding: 9px 12px 9px 0; vertical-align: top; overflow-wrap: anywhere; }
+  td code, th code { white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+
+  /* ── figures ────────────────────────────── */
+  figure { margin: 22px 0 24px; }
+  figure svg { display: block; width: 100%; height: auto; }
+  figcaption { font-size: 12.5px; color: var(--ink-3); margin-top: 10px; font-family: var(--mono); }
+  .fig-frame { border: 1px solid var(--hair); border-radius: 4px; padding: 18px 16px 12px; background: var(--paper-2); }
+
+  /* ── step list (时序) ───────────────────── */
+  .steps { list-style: none; padding: 0; margin: 18px 0 24px; counter-reset: step; }
+  .steps > li {
+    position: relative; padding: 0 0 20px 52px; counter-increment: step;
+    border-left: 1px solid var(--hair); margin-left: 15px;
+  }
+  .steps > li:last-child { border-left-color: transparent; padding-bottom: 4px; }
+  .steps > li::before {
+    content: counter(step, decimal-leading-zero);
+    position: absolute; left: -16px; top: 0;
+    width: 32px; height: 22px; display: grid; place-items: center;
+    background: var(--paper); font-family: var(--mono); font-size: 11px; color: var(--accent);
+    border: 1px solid var(--accent); border-radius: 3px;
+  }
+  .steps .s-title { font-weight: 650; }
+  .steps .s-body { font-size: 14.5px; color: var(--ink-2); margin-top: 3px; }
+  .steps .s-src { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); margin-top: 4px; display: block; }
+
+  footer.docfoot { border-top: 1px solid var(--hair); padding: 18px 0 0; font-size: 12.5px; color: var(--ink-3); font-family: var(--mono); }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav class="toc" aria-label="目录">
+  <div class="toc-brand">context-mode</div>
+  <div class="toc-sub">architecture deep-dive · v1.0.169</div>
+  <ol>
+    <li><a href="#s0"><span class="toc-num">00</span>阅读指南</a></li>
+    <li><a href="#s1"><span class="toc-num">01</span>它是什么</a>
+      <ol>
+        <li><a href="#s1-1">一句话定位</a></li>
+        <li><a href="#s1-2">名词表</a></li>
+      </ol>
+    </li>
+    <li><a href="#s2"><span class="toc-num">02</span>如何运行</a></li>
+    <li><a href="#s3"><span class="toc-num">03</span>分层与依赖方向</a></li>
+    <li><a href="#s4"><span class="toc-num">04</span>主流程时序</a>
+      <ol>
+        <li><a href="#s4-1">一次 ctx_execute</a></li>
+        <li><a href="#s4-2">Hook 拦截</a></li>
+        <li><a href="#s4-3">压缩与恢复</a></li>
+      </ol>
+    </li>
+    <li><a href="#s5"><span class="toc-num">05</span>核心机制拆解</a></li>
+    <li><a href="#s6"><span class="toc-num">06</span>模块与能力地图</a></li>
+    <li><a href="#s7"><span class="toc-num">07</span>工程化与测试</a></li>
+    <li><a href="#s8"><span class="toc-num">08</span>扩展点与陷阱</a></li>
+    <li><a href="#s9"><span class="toc-num">09</span>关键文件索引</a></li>
+    <li><a href="#s10"><span class="toc-num">10</span>未解问题</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<header class="mast">
+  <div class="kicker">项目解剖 · 只读分析</div>
+  <h1>context-mode 核心架构全解</h1>
+  <p class="lede">一个装进 19 种 AI 编码客户端的「上下文省流器 + 会话记忆库」。这份文档从零开始，把它的定位、分层、主流程、核心算法、工程设施讲到你敢动手改代码。</p>
+  <div class="meta-strip">
+    <span><b>版本</b> v1.0.169</span>
+    <span><b>commit</b> dbec980</span>
+    <span><b>仓库</b> github.com/mksglu/context-mode</span>
+    <span><b>源码</b> TypeScript 41,617 行 · 2,232 commits</span>
+    <span><b>许可</b> Elastic-2.0</span>
+  </div>
+</header>
+
+<!-- ════════════════════ 00 阅读指南 ════════════════════ -->
+<section id="s0">
+  <h2><span class="h2num">00</span>阅读指南</h2>
+  <p class="h2note">本页是单文件离线文档：无外部字体、无外部脚本，双击即可打开。</p>
+  <p>文中每一条重要结论都按三分法标注，全篇沿用：</p>
+  <div class="legend-grid">
+    <div class="legend-item"><span class="tag tag-f">事实</span>直接观察到并给出出处（<span class="inline-src">文件:行</span> 或命令），可以当准绳用。</div>
+    <div class="legend-item"><span class="tag tag-i">推断</span>由事实推导出来的判断，合理但未被代码明说，改代码前应自己复核。</div>
+    <div class="legend-item"><span class="tag tag-u">未知</span>没弄清的东西，宁可留白不猜。完整清单见 <a href="#s10">第 10 节</a>。</div>
+  </div>
+  <p>读完的顺序建议：01→02 建立概念；03→04 看全局怎么转；05 是干活时反复回来查的手册；08→09 是「准备改代码」入口。</p>
+</section>
+
+<!-- ════════════════════ 01 它是什么 ════════════════════ -->
+<section id="s1">
+  <h2><span class="h2num">01</span>它是什么</h2>
+
+  <h3 id="s1-1">一句话定位</h3>
+  <p><span class="tag tag-f">事实</span> context-mode 是一个 <strong>MCP 服务器 + 多平台客户端插件</strong>，解决"AI 编码代理的上下文窗口被原始数据灌满"的问题：把大数据留在沙箱和本地 SQLite 知识库里，只把<em>结论</em>放进模型上下文；对话被压缩后，再从本地事件库按需取回工作记忆。<span class="inline-src">package.json:5 · README.md:32-51</span></p>
+
+  <p>拆开看，它同时扮演四个角色：</p>
+  <div class="grid-2">
+    <div class="card">
+      <h4>① 沙箱执行器</h4>
+      <p>11 种语言（JS/<wbr>TS/<wbr>Python/<wbr>Shell/<wbr>Ruby/<wbr>Go/<wbr>Rust/<wbr>PHP/<wbr>Perl/<wbr>R/<wbr>Elixir/<wbr>C#）在子进程里跑代码，只回传 <code>console.log</code> 的结果。"让模型写代码分析，而不是读数据"。</p>
+    </div>
+    <div class="card">
+      <h4>② FTS5 知识库</h4>
+      <p>SQLite FTS5 双索引（porter 词干 + trigram 子串）+ RRF 融合排序 + 邻近度重排 + 拼写纠正。索引过的内容用 <code>ctx_search</code> 按需取回。</p>
+    </div>
+    <div class="card">
+      <h4>③ 会话记忆库</h4>
+      <p>hook 每次工具调用都抽取事件（文件改动、git、决策、错误、计划……约 30 类）写入 SQLite；压缩时生成"目录"快照，恢复时按需检索，不整包倒回上下文。</p>
+    </div>
+    <div class="card">
+      <h4>④ 路由拦截层</h4>
+      <p>hook 在工具执行前拦截：<code>curl/wget</code> 被改写、WebFetch 被拒、大 Read 被标重定向、子代理 prompt 被追加路由指令——把模型"赶"向沙箱工具。</p>
+    </div>
+  </div>
+
+  <h3 id="s1-2">名词表（读代码前先认词）</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>名词</th><th>含义</th><th>出处</th></tr></thead>
+    <tbody>
+      <tr><td><code>ctx_*</code></td><td>它提供的 11 个 MCP 工具的统一前缀（6 个沙箱/索引工具 + 5 个 meta 工具）。</td><td><span class="inline-src">server.ts:1648-4817</span></td></tr>
+      <tr><td>hook</td><td>宿主在生命周期事件（PreToolUse 等 6 类）时 spawn 的独立 Node 进程，是"路由/捕获"的执法层。</td><td><span class="inline-src">hooks/hooks.json</span></td></tr>
+      <tr><td>adapter / 平台</td><td>每种客户端（Claude Code、Codex、Cursor…）一个适配器，负责配置读写、hook 生成、路径契约。共 19 个 <code>PlatformId</code> 取值。</td><td><span class="inline-src">adapters/types.ts:474-493</span></td></tr>
+      <tr><td>session / 会话</td><td>宿主对话的唯一 id；context-mode 以它为键落库事件、统计省流。</td><td><span class="inline-src">session/db.ts</span></td></tr>
+      <tr><td>compact（压缩）</td><td>宿主把长对话摘要化以腾出窗口；context-mode 在压缩前抓一份快照。</td><td><span class="inline-src">hooks/precompact.mjs</span></td></tr>
+      <tr><td>routing block</td><td>注入给模型的一段 XML 指令（<code>&lt;context_window_protection&gt;</code>），规定"什么数据用哪个工具"。</td><td><span class="inline-src">hooks/routing-block.mjs:16-80</span></td></tr>
+      <tr><td>Think-in-Code</td><td>项目第一性原则：分析 = 写代码执行，只有 stdout 进上下文。</td><td><span class="inline-src">README.md:42</span></td></tr>
+      <tr><td>intent（意图检索）</td><td><code>ctx_execute</code> 的可选参数：输出 &gt;5KB 时自动索引，只回"章节标题+预览"，细节留给 <code>ctx_search</code>。</td><td><span class="inline-src">server.ts:1979-2036</span></td></tr>
+      <tr><td>marker（标记文件）</td><td>hook 无法直接开数据库，用 /tmp 小文件在 PreToolUse→PostToolUse 间传递事件（rejected/redirect/latency）。</td><td><span class="inline-src">pretooluse.mjs:175-221</span></td></tr>
+      <tr><td>哨兵（sentinel）</td><td><code>/tmp/context-mode-mcp-ready-&lt;pid&gt;</code>，MCP 服务活着才写；hook 见不到哨兵就不做重定向。</td><td><span class="inline-src">server.ts:4858-4916</span></td></tr>
+      <tr><td>bundle</td><td>esbuild 打出的 6 个 .mjs 单文件产物，提交进 git 供免安装运行。</td><td><span class="inline-src">package.json:82-85</span></td></tr>
+      <tr><td>fail-open</td><td>全局安全哲学：hook 永远 exit 0、检测失败放行——宁可不拦，不误伤正常开发。</td><td><span class="inline-src">run-hook.mjs:15-95</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ════════════════════ 02 如何运行 ════════════════════ -->
+<section id="s2">
+  <h2><span class="h2num">02</span>如何运行</h2>
+  <p class="h2note">两条路：终端用户怎么装、开发者怎么起。</p>
+
+  <h3>用户安装（Claude Code 为例）</h3>
+  <pre><code>/plugin marketplace add mksglu/context-mode
+/plugin install context-mode@context-mode
+# 重启 Claude Code；验证：/context-mode:ctx-doctor</code></pre>
+  <p><span class="tag tag-f">事实</span> 插件清单把 MCP 服务器注册为 <code>node ${CLAUDE_PLUGIN_ROOT}/start.mjs</code>，hooks 由静态 <code>hooks/hooks.json</code> 注册；其他平台（Gemini/Codex/Cursor…）走 <code>npm install -g context-mode</code> + 各配置目录，详见 <code>docs/platform-support.md</code>。<span class="inline-src">.claude-plugin/plugin.json · hooks/hooks.json</span></p>
+
+  <p>MCP 服务启动后的运行链（每次宿主打开会话都会发生）：</p>
+  <ul>
+    <li><code>start.mjs</code>：修正项目目录 env →（Linux）用 Bun 重执行自身绕开 better-sqlite3 崩溃 → 插件缓存自愈 → 检查依赖（必要时后台 npm install）→ import <code>server.bundle.mjs</code>。</li>
+    <li><code>server.bundle.mjs</code>：起 stdio JSON-RPC、注册 11 个工具、写就绪哨兵、开始统计心跳。</li>
+    <li>hook 进程：在每次工具调用前后被宿主独立 spawn。</li>
+  </ul>
+
+  <h3>开发者（在源码仓库里）</h3>
+  <pre><code>npm install
+npm run dev          # = npx tsx src/server.ts  直跑 MCP 服务
+npm run build        # tsc → build/，再 esbuild 出 6 个 bundle + 两个完整性断言
+npm test             # vitest（pretest 会先 build）
+npx tsx src/cli.ts doctor   # 或 npm run doctor</code></pre>
+  <p><span class="tag tag-f">事实</span> Node ≥ 22.5；包里同时有 <code>bun.lock</code> 与 pnpm 声明；测试用 vitest，<code>pool:"forks"</code> 因为 better-sqlite3 在 worker 线程下会崩。<span class="inline-src">package.json:81-126 · vitest.config.ts</span></p>
+
+  <p>运行时数据落在哪（改代码/排障必看）：</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>路径</th><th>内容</th></tr></thead>
+    <tbody>
+      <tr><td><code>&lt;configDir&gt;/context-mode/content/&lt;hash&gt;.db</code></td><td>知识库（按项目目录 SHA-256 前 16 位命名）</td></tr>
+      <tr><td><code>&lt;configDir&gt;/context-mode/sessions/&lt;hash&gt;.db</code></td><td>会话事件库（含 tool_calls 计数）</td></tr>
+      <tr><td><code>&lt;configDir&gt;/context-mode/sessions/stats-&lt;sid&gt;.json</code></td><td>状态栏 sidecar（500ms 节流写、60s 心跳）</td></tr>
+      <tr><td><code>/tmp/context-mode-mcp-ready-&lt;pid&gt;</code></td><td>MCP 就绪哨兵（30s 刷新 mtime）</td></tr>
+      <tr><td><code>&lt;configDir&gt;/context-mode/hook-errors.log</code></td><td>hook 失败日志（fail-open 的证据都在这）</td></tr>
+      <tr><td><code>$CONTEXT_MODE_DIR</code></td><td>可选：整体覆盖存储根（&lt;root&gt;/content、&lt;root&gt;/sessions）</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><span class="tag tag-f">事实</span><span class="inline-src">server.ts:686-697, 1011-1016, 4858-4862 · session/db.ts:86-200</span></p>
+</section>
+
+<!-- ════════════════════ 03 分层 ════════════════════ -->
+<section id="s3">
+  <h2><span class="h2num">03</span>分层与依赖方向</h2>
+  <p class="h2note">五层结构；注意 hooks 层与 MCP 层是两条独立的进程族，只共享约定不共享进程。</p>
+
+  <figure class="fig-frame">
+  <svg viewBox="0 0 980 676" role="img" aria-label="context-mode 分层架构图">
+    <defs>
+      <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 1 L 9 5 L 0 9 z" fill="#8a93a6"/>
+      </marker>
+      <style>
+        .lbl { font-family: -apple-system, "PingFang SC", sans-serif; }
+        .mono { font-family: ui-monospace, Menlo, monospace; }
+      </style>
+    </defs>
+
+    <!-- host layer -->
+    <rect x="20" y="16" width="940" height="120" rx="4" fill="none" stroke="#2b52c9" stroke-width="1.4"/>
+    <text x="38" y="42" class="lbl" font-size="13" font-weight="700" fill="#2b52c9">宿主客户端层</text>
+    <text x="38" y="60" class="lbl" font-size="10.5" fill="#5b6472">19 个 PlatformId：claude-code · codex · gemini-cli · cursor · opencode · kilo · openclaw · pi · omp · kimi</text>
+    <text x="38" y="76" class="lbl" font-size="10.5" fill="#5b6472">kiro · qwen-code · zed · vscode-copilot · jetbrains-copilot · copilot-cli · antigravity(-cli) · antigravity · unknown</text>
+    <g class="mono" font-size="10.5" fill="#3d434e">
+      <rect x="38" y="88" width="120" height="20" rx="10" fill="none" stroke="#d9d6cc"/><text x="52" y="102">json-stdio hooks ×11</text>
+      <rect x="168" y="88" width="104" height="20" rx="10" fill="none" stroke="#d9d6cc"/><text x="182" y="102">TS 插件 ×3</text>
+      <rect x="282" y="88" width="96" height="20" rx="10" fill="none" stroke="#d9d6cc"/><text x="296" y="102">MCP-only ×4</text>
+    </g>
+
+    <!-- arrows down -->
+    <line x1="300" y1="136" x2="300" y2="152" stroke="#8a93a6" stroke-width="1.3" marker-end="url(#arr)"/>
+    <text x="312" y="149" class="mono" font-size="10.5" fill="#5b6472">spawn hook 进程（每事件一次）</text>
+    <line x1="700" y1="136" x2="700" y2="152" stroke="#8a93a6" stroke-width="1.3" marker-end="url(#arr)"/>
+    <text x="712" y="149" class="mono" font-size="10.5" fill="#5b6472">stdio JSON-RPC（长驻）</text>
+
+    <!-- hook layer -->
+    <rect x="20" y="156" width="470" height="126" rx="4" fill="none" stroke="#6b7280" stroke-width="1.2"/>
+    <text x="38" y="182" class="lbl" font-size="13" font-weight="700" fill="#3d434e">Hook 层（独立进程，fail-open）</text>
+    <text x="38" y="200" class="lbl" font-size="11" fill="#5b6472">run-hook.mjs 统一包装：任何失败写日志、永远 exit 0</text>
+    <g class="mono" font-size="10.5" fill="#3d434e">
+      <rect x="38" y="212" width="102" height="22" rx="3" fill="#eef0f4" stroke="#d9d6cc"/><text x="48" y="227">pretooluse</text>
+      <rect x="148" y="212" width="102" height="22" rx="3" fill="#eef0f4" stroke="#d9d6cc"/><text x="158" y="227">posttooluse</text>
+      <rect x="258" y="212" width="102" height="22" rx="3" fill="#eef0f4" stroke="#d9d6cc"/><text x="268" y="227">sessionstart</text>
+      <rect x="368" y="212" width="102" height="22" rx="3" fill="#eef0f4" stroke="#d9d6cc"/><text x="378" y="227">precompact</text>
+      <rect x="38" y="244" width="102" height="22" rx="3" fill="#eef0f4" stroke="#d9d6cc"/><text x="48" y="259">userprompt…</text>
+      <rect x="148" y="244" width="102" height="22" rx="3" fill="#eef0f4" stroke="#d9d6cc"/><text x="158" y="259">stop</text>
+      <rect x="258" y="244" width="212" height="22" rx="3" fill="#e8edfa" stroke="#2b52c9"/><text x="268" y="259" fill="#2b52c9">共享 core/：routing · formatters</text>
+    </g>
+
+    <!-- mcp layer -->
+    <rect x="510" y="156" width="450" height="126" rx="4" fill="none" stroke="#2b52c9" stroke-width="1.4"/>
+    <text x="528" y="182" class="lbl" font-size="13" font-weight="700" fill="#2b52c9">MCP Server 层（src/server.ts，4991 行）</text>
+    <text x="528" y="200" class="lbl" font-size="11" fill="#5b6472">server.bundle.mjs · 11 个 ctx_* 工具 · 输出分级 · 统计</text>
+    <g class="mono" font-size="10.5" fill="#3d434e">
+      <rect x="528" y="212" width="132" height="22" rx="3" fill="#e8edfa" stroke="#2b52c9"/><text x="538" y="227" fill="#2b52c9">ctx_execute(_file)</text>
+      <rect x="668" y="212" width="132" height="22" rx="3" fill="#e8edfa" stroke="#2b52c9"/><text x="678" y="227" fill="#2b52c9">ctx_index / search</text>
+      <rect x="808" y="212" width="132" height="22" rx="3" fill="#e8edfa" stroke="#2b52c9"/><text x="818" y="227" fill="#2b52c9">ctx_fetch_and_index</text>
+      <rect x="528" y="244" width="132" height="22" rx="3" fill="#eef0f4" stroke="#d9d6cc"/><text x="538" y="259">ctx_batch_execute</text>
+      <rect x="668" y="244" width="272" height="22" rx="3" fill="#eef0f4" stroke="#d9d6cc"/><text x="678" y="259" font-size="9.5">meta：stats · doctor · upgrade · purge · insight</text>
+    </g>
+
+    <!-- arrows down -->
+    <line x1="255" y1="282" x2="255" y2="330" stroke="#8a93a6" stroke-width="1.3" marker-end="url(#arr)"/>
+    <line x1="735" y1="282" x2="735" y2="330" stroke="#8a93a6" stroke-width="1.3" marker-end="url(#arr)"/>
+    <text x="400" y="310" class="mono" font-size="10.5" fill="#5b6472">bundle-first 加载（hooks/*.bundle.mjs → build/ 回退）</text>
+
+    <!-- domain layer -->
+    <rect x="20" y="334" width="940" height="120" rx="4" fill="none" stroke="#191c22" stroke-width="1.4"/>
+    <text x="38" y="360" class="lbl" font-size="13" font-weight="700" fill="#191c22">领域层（src/ 纯业务代码）</text>
+    <g class="lbl" font-size="11.5" fill="#3d434e">
+      <rect x="38" y="372" width="168" height="66" rx="3" fill="none" stroke="#c4c0b4"/>
+      <text x="52" y="392" font-weight="600">PolyglotExecutor</text><text x="52" y="409" class="mono" font-size="10">executor.ts · 785 行</text><text x="52" y="426" font-size="10">11 语言沙箱 · 进程组 · 100MB 上限</text>
+
+      <rect x="216" y="372" width="168" height="66" rx="3" fill="none" stroke="#c4c0b4"/>
+      <text x="230" y="392" font-weight="600">security.ts</text><text x="230" y="409" class="mono" font-size="10">889 行</text><text x="230" y="426" font-size="10">策略求值 · 链式拆分 · 边界包含</text>
+
+      <rect x="394" y="372" width="168" height="66" rx="3" fill="none" stroke="#c4c0b4"/>
+      <text x="408" y="392" font-weight="600">ContentStore</text><text x="408" y="409" class="mono" font-size="10">store.ts · 2071 行</text><text x="408" y="426" font-size="10">分块 · FTS5 · RRF 检索</text>
+
+      <rect x="572" y="372" width="168" height="66" rx="3" fill="none" stroke="#c4c0b4"/>
+      <text x="586" y="392" font-weight="600">SessionDB + session/*</text><text x="586" y="409" class="mono" font-size="10">~10,000 行</text><text x="586" y="426" font-size="10">事件抽取 · 快照 · 分析</text>
+
+      <rect x="750" y="372" width="192" height="66" rx="3" fill="none" stroke="#c4c0b4"/>
+      <text x="764" y="392" font-weight="600">adapters/*</text><text x="764" y="409" class="mono" font-size="10">~9,600 行 · 19 平台</text><text x="764" y="426" font-size="10">检测 · 配置读写 · hook 生成</text>
+    </g>
+
+    <!-- arrows down -->
+    <line x1="490" y1="454" x2="490" y2="500" stroke="#8a93a6" stroke-width="1.3" marker-end="url(#arr)"/>
+    <text x="502" y="482" class="mono" font-size="10.5" fill="#5b6472">db-base.ts · WAL · busy_timeout · withRetry · 损坏自愈（ADR-0001）</text>
+
+    <!-- storage -->
+    <rect x="20" y="504" width="940" height="88" rx="4" fill="#f3f1ea" stroke="#c4c0b4" stroke-width="1.2"/>
+    <text x="38" y="530" class="lbl" font-size="13" font-weight="700" fill="#3d434e">存储层 · SQLite（better-sqlite3；Linux 下优先 Bun 的 bun:sqlite）</text>
+    <g class="mono" font-size="11" fill="#3d434e">
+      <text x="38" y="556">content/&lt;hash&gt;.db — chunks(porter) + chunks_trigram + sources + vocabulary</text>
+      <text x="38" y="576">sessions/&lt;hash&gt;.db — session_events · session_meta · session_resume · tool_calls</text>
+    </g>
+
+    <!-- distribution layer -->
+    <rect x="20" y="608" width="940" height="52" rx="4" fill="none" stroke="#6b7280" stroke-width="1.2" stroke-dasharray="5 4"/>
+    <text x="38" y="632" class="lbl" font-size="12.5" font-weight="700" fill="#3d434e">分发 / 自愈层（启动期）：start.mjs → 缓存自愈 · ensure-deps · 完整度闸(exit 2) · postinstall / heal-* / version-sync</text>
+    <text x="38" y="650" class="mono" font-size="10.5" fill="#6b7280">打包：tsc → build/ ；esbuild → 6 个 .bundle.mjs（提交进 git，CI bundle.yml 自动重建）</text>
+  </svg>
+  <figcaption>图 1 · 五层结构与依赖方向。hooks 层与 MCP 层并行、只共享 hooks/core 与路径约定；两者最终都落到同一套 SQLite。</figcaption>
+  </figure>
+</section>
+
+<!-- ════════════════════ 04 主流程 ════════════════════ -->
+<section id="s4">
+  <h2><span class="h2num">04</span>主流程时序</h2>
+  <p class="h2note">三条核心路径：一次工具调用的生命周期、工具的拦截路由、压缩恢复。</p>
+
+  <h3 id="s4-1">4.1 一次 <code>ctx_execute</code>：从调用到"字节留在沙箱"</h3>
+  <figure class="fig-frame">
+  <svg viewBox="0 0 980 300" role="img" aria-label="输出分级决策图">
+    <defs>
+      <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 1 L 9 5 L 0 9 z" fill="#8a93a6"/>
+      </marker>
+    </defs>
+    <g font-family="-apple-system, 'PingFang SC', sans-serif" font-size="11.5">
+      <rect x="20" y="120" width="150" height="56" rx="4" fill="#e8edfa" stroke="#2b52c9"/>
+      <text x="34" y="144" font-weight="700" fill="#2b52c9">沙箱 stdout</text>
+      <text x="34" y="162" class="mono" font-size="10" fill="#3d434e">__CM_FS__ / __CM_NET__ 已剥离</text>
+      <text x="34" y="196" class="mono" font-size="9.5" fill="#6b7280">INTENT_SEARCH_THRESHOLD = 5000</text>
+
+      <line x1="170" y1="148" x2="200" y2="148" stroke="#8a93a6" marker-end="url(#arr2)"/>
+
+      <polygon points="310,112 420,148 310,184 200,148" fill="#f8eed9" stroke="#92590a"/>
+      <text x="310" y="144" font-size="11" fill="#92590a" text-anchor="middle">输出 ＞5KB？</text>
+      <text x="310" y="161" font-size="11" fill="#92590a" text-anchor="middle">且带 intent？</text>
+
+      <line x1="420" y1="148" x2="560" y2="148" stroke="#8a93a6" marker-end="url(#arr2)"/>
+      <text x="470" y="140" font-size="10" fill="#6b7280">是</text>
+
+      <rect x="560" y="112" width="180" height="72" rx="4" fill="#e3f2e9" stroke="#166f45"/>
+      <text x="574" y="136" font-weight="700" fill="#166f45">intentSearch 路径</text>
+      <text x="574" y="154" font-size="10.5" fill="#3d434e">全文索引进 FTS5 →</text>
+      <text x="574" y="170" font-size="10.5" fill="#3d434e">只回：章节标题+预览+词表</text>
+
+      <line x1="740" y1="148" x2="806" y2="148" stroke="#8a93a6" marker-end="url(#arr2)"/>
+      <rect x="806" y="112" width="154" height="72" rx="4" fill="none" stroke="#c4c0b4"/>
+      <text x="820" y="136" font-size="11" fill="#3d434e">后续用 ctx_search</text>
+      <text x="820" y="153" font-size="11" fill="#3d434e">按需取回细节</text>
+      <text x="820" y="171" class="mono" font-size="9.5" fill="#6b7280">无内容丢失</text>
+
+      <!-- lower branch -->
+      <line x1="310" y1="184" x2="310" y2="226" stroke="#8a93a6" marker-end="url(#arr2)"/>
+      <text x="322" y="208" font-size="10" fill="#6b7280">否 → 输出 ＞100KB？</text>
+
+      <rect x="240" y="228" width="180" height="58" rx="4" fill="#8494b3" fill-opacity="0.14" stroke="#6b7280"/>
+      <text x="254" y="252" font-weight="700" fill="#3d434e">自动索引，返回指针</text>
+      <text x="254" y="270" class="mono" font-size="9.5" fill="#6b7280">LARGE_OUTPUT_THRESHOLD = 102400</text>
+
+      <line x1="420" y1="257" x2="560" y2="257" stroke="#8a93a6" marker-end="url(#arr2)"/>
+      <text x="474" y="249" font-size="10" fill="#6b7280">否则</text>
+      <rect x="560" y="230" width="180" height="54" rx="4" fill="none" stroke="#c4c0b4"/>
+      <text x="574" y="253" font-weight="600" fill="#3d434e">原样返回 stdout</text>
+      <text x="574" y="270" font-size="10" fill="#6b7280">前置回显执行的代码（可审计）</text>
+
+      <!-- echo note -->
+      <text x="806" y="257" class="mono" font-size="9.5" fill="#6b7280">三档都走 trackResponse：</text>
+      <text x="806" y="272" class="mono" font-size="9.5" fill="#6b7280">计数 · stats JSON · 事件落库</text>
+    </g>
+  </svg>
+  <figcaption>图 2 · 输出分级：同一个工具，按体积与 intent 走三条截然不同的返回路径。<span class="inline-src">server.ts:1912-1941</span></figcaption>
+  </figure>
+
+  <ol class="steps">
+    <li>
+      <span class="s-title">宿主发起 MCP 调用</span>
+      <div class="s-body">handler 外面包了 in-flight 标记（防长任务被空闲回收）与错误兜底。</div>
+      <span class="s-src">server.ts:294-320</span>
+    </li>
+    <li>
+      <span class="s-title">安全关卡（双保险）</span>
+      <div class="s-body">shell 代码先按用户 <code>permissions.deny</code> 拆链+拆子 shell 匹配；非 shell 代码正则提取 <code>execSync(...)</code>/<code>subprocess.run(...)</code> 等内嵌命令再匹配。任一段命中 → 拒绝。</div>
+      <span class="s-src">server.ts:1111-1162 · security.ts:174-314</span>
+    </li>
+    <li>
+      <span class="s-title">插桩（仅 JS/TS）</span>
+      <div class="s-body">影子 require 拦截 fs.readFileSync 与 fetch/http，统计"留在沙箱的字节"，进程退出时以 <code>__CM_FS__</code>/<code>__CM_NET__</code> 写 stderr，服务端剥离计数进 <code>bytesSandboxed</code>。</div>
+      <span class="s-src">server.ts:1761-1819</span>
+    </li>
+    <li>
+      <span class="s-title">PolyglotExecutor 执行</span>
+      <div class="s-body">临时目录写脚本（按语言补包装）→ runtime 探测出的命令行 → env 净化（约 90 个危险变量禁掉）→ Unix 上建独立进程组 → 超时杀全组、输出合计 100MB 硬顶。所有语言 cwd = 项目根。</div>
+      <span class="s-src">executor.ts:282-571 · runtime.ts:644-671</span>
+    </li>
+    <li>
+      <span class="s-title">按体积走的返回策略</span>
+      <div class="s-body">见图 2：＞5KB+intent 走意图检索（目录式返回）；＞100KB 自动索引返回指针；否则原样返回（前置执行回显供审计）。</div>
+      <span class="s-src">server.ts:1912-1941</span>
+    </li>
+    <li>
+      <span class="s-title">记账（trackResponse）</span>
+      <div class="s-body">累加每次调用的 calls / bytes → 500ms 节流写状态栏 sidecar JSON（含省下的 tokens 与折算金额）→ 异步写 SessionDB 计数并发射事件；沙箱类工具另发 <code>bytes_avoided</code> 事件。</div>
+      <span class="s-src">server.ts:885-966</span>
+    </li>
+  </ol>
+
+  <h3 id="s4-2">4.2 Hook 拦截：工具执行前的"交通指挥"</h3>
+  <figure class="fig-frame">
+  <svg viewBox="0 0 980 330" role="img" aria-label="PreToolUse 路由决策图">
+    <defs>
+      <marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 1 L 9 5 L 0 9 z" fill="#8a93a6"/>
+      </marker>
+    </defs>
+    <g font-family="-apple-system, 'PingFang SC', sans-serif" font-size="11.5">
+      <rect x="24" y="132" width="140" height="52" rx="4" fill="#e8edfa" stroke="#2b52c9"/>
+      <text x="38" y="154" font-weight="700" fill="#2b52c9">宿主工具调用</text>
+      <text x="38" y="171" class="mono" font-size="10" fill="#3d434e">PreToolUse hook</text>
+      <line x1="164" y1="158" x2="216" y2="158" stroke="#8a93a6" marker-end="url(#arr3)"/>
+
+      <polygon points="290,132 364,158 290,184 216,158" fill="#f8eed9" stroke="#92590a"/>
+      <text x="290" y="162" font-size="10.5" fill="#92590a" text-anchor="middle">MCP 就绪？</text>
+      <text x="150" y="204" class="mono" font-size="9.5" fill="#6b7280">无哨兵 → 全部放行（不折腾）</text>
+
+      <line x1="364" y1="158" x2="412" y2="158" stroke="#8a93a6" marker-end="url(#arr3)"/>
+      <text x="372" y="150" font-size="10" fill="#6b7280">就绪</text>
+
+      <g font-size="10.5">
+        <rect x="412" y="24" width="186" height="44" rx="3" fill="none" stroke="#c4c0b4"/>
+        <text x="424" y="42" font-weight="600" fill="#3d434e">Bash</text>
+        <text x="424" y="58" fill="#5b6472">deny 策略 → curl/wget 改写</text>
+
+        <rect x="412" y="82" width="186" height="44" rx="3" fill="none" stroke="#c4c0b4"/>
+        <text x="424" y="100" font-weight="600" fill="#3d434e">Read / Grep</text>
+        <text x="424" y="116" fill="#5b6472">＞50KB 标重定向；其余一次性提示</text>
+
+        <rect x="412" y="140" width="186" height="44" rx="3" fill="#fbe9e9" stroke="#b03030"/>
+        <text x="424" y="158" font-weight="600" fill="#b03030">WebFetch</text>
+        <text x="424" y="174" fill="#5b6472">硬 deny → 改用抓取工具</text>
+
+        <rect x="412" y="198" width="186" height="44" rx="3" fill="none" stroke="#c4c0b4"/>
+        <text x="424" y="216" font-weight="600" fill="#3d434e">Agent / 外部 MCP</text>
+        <text x="424" y="232" fill="#5b6472">子代理 prompt 追加 / 周期提醒</text>
+
+        <rect x="412" y="256" width="186" height="44" rx="3" fill="#e3f2e9" stroke="#166f45"/>
+        <text x="424" y="274" font-weight="600" fill="#166f45">ctx_* 自家工具</text>
+        <text x="424" y="290" fill="#5b6472">安全策略检查 + cwd 钉住项目根</text>
+      </g>
+
+      <line x1="598" y1="158" x2="640" y2="158" stroke="#8a93a6" marker-end="url(#arr3)"/>
+
+      <g font-size="10.5">
+        <rect x="640" y="40" width="150" height="52" rx="3" fill="#e3f2e9" stroke="#166f45"/>
+        <text x="652" y="62" font-weight="600" fill="#166f45">allow</text>
+        <text x="652" y="80" fill="#5b6472">原样执行</text>
+
+        <rect x="640" y="110" width="150" height="52" rx="3" fill="#f8eed9" stroke="#92590a"/>
+        <text x="652" y="132" font-weight="600" fill="#92590a">modify / deny</text>
+        <text x="652" y="150" fill="#5b6472">改写命令 / 拒绝</text>
+
+        <rect x="640" y="180" width="150" height="66" rx="3" fill="#eef0f4" stroke="#6b7280"/>
+        <text x="652" y="202" font-weight="600" fill="#3d434e">写 marker 文件</text>
+        <text x="652" y="220" fill="#5b6472">rejected / redirect</text>
+        <text x="652" y="236" fill="#5b6472">latency（/tmp）</text>
+      </g>
+
+      <line x1="790" y1="213" x2="822" y2="213" stroke="#8a93a6" marker-end="url(#arr3)"/>
+      <rect x="822" y="180" width="150" height="66" rx="3" fill="none" stroke="#c4c0b4"/>
+      <text x="834" y="202" font-weight="600" fill="#3d434e">PostToolUse</text>
+      <text x="834" y="220" fill="#5b6472">消费 marker →</text>
+      <text x="834" y="236" fill="#5b6472">事件落 SessionDB</text>
+    </g>
+  </svg>
+  <figcaption>图 3 · PreToolUse 路由：五类分支、三种裁决（allow / modify / deny），事件靠 /tmp 标记文件在两段 hook 之间传递。<span class="inline-src">hooks/core/routing.mjs:670-1017 · pretooluse.mjs · posttooluse.mjs:62-179</span></figcaption>
+  </figure>
+
+  <h3 id="s4-3">4.3 压缩与恢复：快照是"目录"，不是"正文"</h3>
+  <ol class="steps">
+    <li><span class="s-title">PreCompact</span><div class="s-body">读全部会话事件 → 生成 XML 快照（目标、文件 top10、错误、决策、规则、git、任务、环境、子代理、技能、角色、意图、最近 3 条用户消息；每节内嵌一条可直接运行的 <code>ctx_search</code> 调用）→ 写入 <code>session_resume</code>（consumed=0）。</div><span class="s-src">hooks/precompact.mjs:33-99 · session/snapshot.ts</span></li>
+    <li><span class="s-title">SessionStart(compact)</span><div class="s-body">写事件清单 <code>&lt;hash&gt;-events.md</code>；注入 directive（上次请求、未完成任务、决策、"不要让用户重复"）；MCP 进程把该文件索引进 FTS5（source=<code>session-events</code>）后删除文件。</div><span class="s-src">hooks/sessionstart.mjs · server.ts:508-521</span></li>
+    <li><span class="s-title">新会话 resume</span><div class="s-body">新 session id 没有 live 事件时，用 <code>UPDATE … RETURNING</code> 原子领取上一条未消费快照注入（防重复领取/自我注入）。</div><span class="s-src">session/db.ts:1059-1078, 1601</span></li>
+    <li><span class="s-title">按需取细节</span><div class="s-body">模型需要具体内容时 <code>ctx_search(source:"session-events", sort:"timeline")</code>；这就是"不必把数据倒回上下文"的完整闭环。</div><span class="s-src">search/unified.ts:133-173</span></li>
+  </ol>
+</section>
+
+<!-- ════════════════════ 05 核心机制 ════════════════════ -->
+<section id="s5">
+  <h2><span class="h2num">05</span>核心机制拆解</h2>
+  <p class="h2note">八条机制，每条都可独立当"改这块代码前的必读"。</p>
+
+  <h3>5.1 沙箱执行：三件套（进程隔离 + env 净化 + 输出护栏）</h3>
+  <ul>
+    <li><strong>进程</strong>：Unix 上 <code>detached:true</code> 建进程组，超时用负 PID 杀整组；Windows 用 <code>taskkill /F /T</code>；<code>background:true</code> 时超时不杀、unref 后把管道换成 no-op 排空（避免 SIGPIPE 杀掉子进程）。<span class="inline-src">executor.ts:196-208, 475-508</span></li>
+    <li><strong>env</strong>：约 90 项 denylist（<code>BASH_ENV</code>/<code>NODE_OPTIONS</code>/<code>LD_PRELOAD</code>/<code>DYLD_INSERT_LIBRARIES</code>/<code>DOTNET_*</code>/<code>CORECLR_PROFILER*</code>/<code>GIT_SSH*</code>…），外加 <code>BASH_FUNC_*</code>、<code>COMPlus_*</code> 前缀清扫；强制 <code>TMPDIR</code> 指向沙箱、<code>NO_COLOR=1</code>。<span class="inline-src">executor.ts:573-745</span></li>
+    <li><strong>护栏</strong>：stdout+stderr 合计 100MB 硬顶（超了直接杀并注明）；默认不设超时（issue #406：超时归宿主 RPC 管）；Rust 先编译再跑、编译限 60s。<span class="inline-src">executor.ts:510-547, 377-407</span></li>
+    <li><strong>怪招备忘录</strong>：<code>OS_TMPDIR</code> 绕过被 shell 改写的 <code>TMPDIR</code>；Windows Git Bash 裸 <code>mvn</code> → <code>mvn.cmd</code>；PowerShell 5.1 脚本加 UTF-8 BOM；Go/PHP 自动补包装。</li>
+  </ul>
+
+  <h3>5.2 安全策略引擎：复用宿主自己的权限配置</h3>
+  <ul>
+    <li>读的是用户已有的 <code>.claude/settings[.local].json</code> 与各 adapter 全局 settings 的 <code>permissions.{allow,deny,ask}</code>——不自造一套配置。<span class="inline-src">security.ts:363-490</span></li>
+    <li><strong>防绕过</strong>：按 <code>&amp;&amp; || ; | &amp;</code> 拆链、递归提取 <code>$()</code> 与反引号子 shell，任意一段命中即拒；<code>echo ok &amp;&amp; sudo rm -rf /</code> 拦得住。<span class="inline-src">security.ts:174-314</span></li>
+    <li><strong>文件路径</strong>同一路径三形态匹配（原样 / 词法绝对 / realpath），防 <code>..</code> 穿越与符号链接逃逸；<strong>项目边界围栏</strong>把 <code>ctx_execute_file</code> 钉在项目根内，逃生门是用户已有的 <code>permissions.allow: ["Read(...)"]</code> 规则。<span class="inline-src">security.ts:616-783 · server.ts:1184-1209</span></li>
+    <li>服务器侧只有 deny 模式（没有 UI 问用户）；任何检测异常一律放行——注释明说"hooks 才是主执法层"。<span class="inline-src">server.ts:1127-1131</span></li>
+  </ul>
+
+  <h3>5.3 检索管线：两个匹配器 + 一层融合 + 三层修补</h3>
+  <ol>
+    <li><strong>查询清洗</strong>：剥 FTS5 元字符、去操作词与停用词、逐词加引号——语法注入防御。<span class="inline-src">store.ts:90-125</span></li>
+    <li><strong>RRF 融合</strong>：porter 词干表与 trigram 子串表并行检索，<code>Σ 1/(60+rank+1)</code> 融合——两边都好的文档排最前。</li>
+    <li><strong>邻近度重排</strong>：top 结果按"查询词靠得近"加分（标题命中权重最高）。</li>
+    <li><strong>模糊纠正</strong>：零结果时用 vocabulary 表 + Levenshtein 改词重搜（容差按词长 1/2/3）。</li>
+    <li>搜索用 40KB 输出上限 + 防刷闸：60 秒窗口内第 4 次查询起每查询只给 1 条，第 8 次直接拒绝并命令改用 <code>ctx_batch_execute</code>（按 agent 会话键控，子代理不互相挤占）。<span class="inline-src">server.ts:2457-2470, 2655-2679</span></li>
+  </ol>
+
+  <h3>5.4 分块策略：按内容形态四套打法</h3>
+  <ul>
+    <li>Markdown：H1–H4 标题栈组块（<code>path &gt; to &gt; title</code>），代码围栏整块保留；4096B 上限按空行拆。</li>
+    <li>纯文本：最优先按空行分段（3–200 段且每段 &lt;5KB），否则固定 20 行 + 2 行重叠。</li>
+    <li>JSON：递归遍历，标题=键路径；数组按 identity 字段（id/name/title…）分批命名。</li>
+    <li>目录：有界遍历（深度 5、文件 200、扩展名白名单、尊重 .gitignore、默认不跟符号链接）。<span class="inline-src">store.ts:1646-2022 · store-directory.ts</span></li>
+  </ul>
+
+  <h3>5.5 输出回显与审计（#717/#736 的教训）</h3>
+  <p>execute 类工具返回的文本以一个"回显"开头（执行的代码 / 处理的路径，代码最长 2000 字符、命令 500 字符，超长截断标注），让用户和宿主 tooling 能审到实际执行了什么。<span class="inline-src">server.ts:1477-1527 · buildExecuteEcho:1523</span></p>
+
+  <h3>5.6 会话事件系统：约 30 类事件 + 去重 + 淘汰</h3>
+  <ul>
+    <li>PostToolUse 抽取：文件读写改、git/commit、错误及"错误解决"、任务、计划模式进出与批准/拒绝、技能、子代理、外部引用、worktree、bash 结果、重试检测等（约 30 类）。<span class="inline-src">session/extract.ts:2710-2750</span></li>
+    <li>写入策略：单事务"去重（5 条窗口）→ FIFO 淘汰（上上限 1000）→ 插入"，配 <code>withRetry</code> 抗 SQLITE_BUSY。<span class="inline-src">session/db.ts:1173-1204</span></li>
+    <li>归属：每事件算 <code>project_dir</code> + 来源 + 置信度（carry-forward），保证多项目共用存储时不错归。<span class="inline-src">session/project-attribution.ts</span></li>
+  </ul>
+
+  <h3>5.7 兼容性防御（踩坑史最密集处）</h3>
+  <ul>
+    <li>OpenCode/Kilo 双注册抑制（#623/#637）：插件与旧 MCP 块并存时，MCP 子进程不再注册工具，并给出 stderr 诊断 + 显式空 <code>tools/list</code>（否则 SDK 回 -32601 误导用户）。</li>
+    <li>Gemini 严格函数调用：发出去的 schema 做 <code>const→enum</code>、删 <code>additionalProperties</code>（#854 注释）。<span class="inline-src">server.ts:353-413</span></li>
+    <li>空 prompts/resources handler 防传输层毒化（#168）。</li>
+    <li>版本检查：响应里自动插入 outdated 提醒（最多 3 次爆发、之后静默 1h）。<span class="inline-src">server.ts:777-841</span></li>
+  </ul>
+
+  <h3>5.8 生命周期与自愈</h3>
+  <ul>
+    <li>MCP 侧：<code>lifecycle.ts</code> 看护父进程存活（防孤儿），bridge 子进程另有空闲自灭（#854）。</li>
+    <li>启动侧：start.mjs 六层自救（Bun re-exec / 缓存 heal / env heal / hook normalize / 依赖 ensure / 部分安装补全 + 完整度闸 exit 2）。</li>
+    <li>数据侧：陈旧 DB 清理（死 PID、14 天）、WAL 僵尸库检测、损坏库重命名/重建、退出时 checkpoint。多写者契约见 ADR-0001。</li>
+  </ul>
+</section>
+
+<!-- ════════════════════ 06 地图 ════════════════════ -->
+<section id="s6">
+  <h2><span class="h2num">06</span>模块与能力地图</h2>
+
+  <h3>代码量分布（实测）</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>模块</th><th>行数</th><th>一句话职责</th></tr></thead>
+    <tbody>
+      <tr><td><code>src/server.ts</code></td><td>4,991</td><td>MCP 入口 + 11 个工具（唯一巨型文件，改这里最需小心）</td></tr>
+      <tr><td><code>src/session/*</code></td><td>~10,000</td><td>extract(2960) · analytics(3085) · db(1726) · snapshot · purge · pricing…</td></tr>
+      <tr><td><code>src/adapters/*</code></td><td>~9,600</td><td>19 平台：检测 · 配置 · hook 生成（codex 1204 / pi-bridge 1060 / openclaw 1039…）</td></tr>
+      <tr><td><code>hooks/*.mjs</code></td><td>~4,900</td><td>6 类事件脚本 + 共享 core/（routing 最大）</td></tr>
+      <tr><td><code>src/cli.ts</code></td><td>2,040</td><td>CLI：index/search/doctor/upgrade/hook 分发/statusline/insight</td></tr>
+      <tr><td><code>src/store.ts</code></td><td>2,071</td><td>FTS5 知识库</td></tr>
+      <tr><td><code>src/security.ts</code> + <code>executor.ts</code> + <code>runtime.ts</code></td><td>2,439</td><td>策略 / 沙箱 / runtime 探测</td></tr>
+      <tr><td><code>scripts/*</code></td><td>~2,300</td><td>安装自愈 · 打包断言 · 版本同步</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>平台支持三范式（docs/platform-support.md）</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>范式</th><th>平台</th><th>拦截能力</th></tr></thead>
+    <tbody>
+      <tr><td><strong>JSON stdin/stdout</strong>（11）</td><td>Claude Code · Qwen Code · Gemini CLI · VS Code Copilot · JetBrains Copilot · Copilot CLI · Cursor · Codex CLI · Kimi · Antigravity CLI · Kiro</td><td>可 deny / 可改写参数（codex 不支持改写 → fail-closed deny；kimi 仅 deny；kiro exit-code 阻塞）</td></tr>
+      <tr><td><strong>TS 插件</strong>（3）</td><td>OpenCode · KiloCode · OpenClaw</td><td>进程内 <code>tool.execute.before/after</code>；工具在插件内注册，不跑 MCP 子进程</td></tr>
+      <tr><td><strong>MCP-only</strong>（4）</td><td>Antigravity · Zed · Pi · OMP</td><td>无 hook；pi/omp 经自家 mcp-bridge 桥接；路由靠 configs/&lt;platform&gt;/AGENTS.md 静态文案</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>11 个工具能力一览</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>工具</th><th>输入要点</th><th>行为</th></tr></thead>
+    <tbody>
+      <tr><td><code>ctx_execute</code></td><td>language / code / intent? / background? / cwd?</td><td>沙箱跑代码；输出分级返回</td></tr>
+      <tr><td><code>ctx_execute_file</code></td><td>path / language / code</td><td>文件进 <code>FILE_CONTENT</code>；项目边界 + deny 检查</td></tr>
+      <tr><td><code>ctx_index</code></td><td>content 或 path（文件/目录）</td><td>索引进 FTS5；目录有 5/200 上限</td></tr>
+      <tr><td><code>ctx_search</code></td><td>queries[] / source? / sort / contentType? / project?</td><td>RRF+邻近+纠错；防刷限流；40KB 上限</td></tr>
+      <tr><td><code>ctx_fetch_and_index</code></td><td>url 或 requests[] / concurrency / ttl / force</td><td>沙箱抓取（SSRF 防护）→ HTML→MD → 索引；24h 缓存</td></tr>
+      <tr><td><code>ctx_batch_execute</code></td><td>commands[] / queries[] / concurrency ≤8 / query_scope</td><td>批量跑+自动索引+同回合搜索</td></tr>
+      <tr><td><code>ctx_stats</code></td><td>—</td><td>省流报告（金额/token/工具分解）</td></tr>
+      <tr><td><code>ctx_doctor</code></td><td>—</td><td>返回给宿主执行的诊断命令</td></tr>
+      <tr><td><code>ctx_upgrade</code></td><td>—</td><td>返回升级命令</td></tr>
+      <tr><td><code>ctx_purge</code></td><td>confirm:true（+ sessionId/scope）</td><td>销毁索引/会话数据（精确删除不伤项目文件）</td></tr>
+      <tr><td><code>ctx_insight</code></td><td>—</td><td>打开托管仪表盘（商业面）</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><span class="tag tag-f">事实</span><span class="inline-src">server.ts:1647-4846 · docs/platform-support.md</span></p>
+</section>
+
+<!-- ════════════════════ 07 工程化 ════════════════════ -->
+<section id="s7">
+  <h2><span class="h2num">07</span>工程化与测试</h2>
+
+  <h3>构建管线</h3>
+  <pre><code>tsc                 → build/**（ES2022 / NodeNext / declaration）
+esbuild ×6          → server.bundle.mjs · cli.bundle.mjs
+                      hooks/{session-extract,session-snapshot,session-db,security}.bundle.mjs
+                      --platform=node --target=node18 --format=esm --minify
+assert-bundle       → 禁 esbuild 的 __require 垫片（"Dynamic require of" 等）
+assert-asymmetric-drift → .mcp.json.example 与 .claude-plugin/plugin.json 必须都钉
+                          ${CLAUDE_PLUGIN_ROOT}/start.mjs（防入口漂移）</code></pre>
+  <ul>
+    <li><strong>external 依赖的讲究</strong>：better-sqlite3（ABI 原生插件）与 turndown/domino（沙箱子进程运行时 require.resolve）留在包外；bundle 让 marketplace/git-clone 安装免 npm install 即可运行。<span class="inline-src">package.json:82-85 · start.mjs:468-538</span></li>
+    <li><strong>bundle 进 git</strong>：CI <code>bundle.yml</code> 在 push 到 main 时自动重建并强制提交 6 个 bundle。<span class="tag tag-i">推断</span>这是为了让"git clone 即用"与 marketplace 分发绕过构建。</li>
+  </ul>
+
+  <h3>测试与 CI</h3>
+  <ul>
+    <li>vitest：<code>tests/**/*.test.ts</code>，超时 30s，<code>pool:"forks"</code>（better-sqlite3 在线程池下会 segfault），CI 限 2 worker + 重试 2 次。<span class="inline-src">vitest.config.ts</span></li>
+    <li>约 300 个测试文件，目录按模块切分：core / adapters / hooks / session / util / cli / security / analytics / executor / integration / scripts / plugins…；另有 benchmark 与真实生态对比脚本。</li>
+    <li>CI（ci.yml）：ubuntu/macos/windows 三平台 + Node 22.5 + Python/Go/Elixir；跑 typecheck → build（含两个断言）→ bundle → 再断言 → vitest → doctor（continue-on-error）。</li>
+    <li>版本一致性：<code>version-sync.mjs</code> 把 <code>package.json.version</code> 同步到 10 个清单文件，读写失败即 exit 1（#768），npm 的 <code>version</code> 钩子精确 git add 这 10 个文件。</li>
+  </ul>
+
+  <h3>发布与自愈哲学</h3>
+  <p>这个项目的工程投入有一大半花在"用户装了之后不可能坏"上：postinstall 遇 Linux+旧 Node 直接硬失败（避免 SIGSEGV 被当随机崩溃）、六层插件缓存自愈、原生模块 ABI 缓存换名、部分安装完整性闸、hook 路径归一到绝对路径（含 MSYS 修正）。<span class="tag tag-f">事实</span><span class="inline-src">scripts/* · start.mjs · hooks/normalize-hooks.mjs</span></p>
+</section>
+
+<!-- ════════════════════ 08 扩展点 ════════════════════ -->
+<section id="s8">
+  <h2><span class="h2num">08</span>扩展点与常见陷阱</h2>
+
+  <h3>想加一个新平台适配器</h3>
+  <ol>
+    <li>在 <code>src/adapters/&lt;name&gt;/index.ts</code> 实现 <code>HookAdapter</code>（从 <code>types.ts:172-322</code> 抄契约；JSON-stdio 平台多半能继承 <code>ClaudeCodeBaseAdapter</code>）。</li>
+    <li>在 <code>detect.ts</code> 的 <code>PLATFORM_ENV_VARS</code> 注册识别 env，并在 <code>getAdapter()</code> 的 switch 挂上。</li>
+    <li>在 <code>hooks/core/</code> 加该平台的事件格式化（<code>formatters.mjs</code> 的模式是纯函数 + 平台分支）；<code>HOOK_MAP</code>（cli.ts:77-156）与 <code>configs/&lt;name&gt;/</code> 补配置。</li>
+    <li>版本同步：若平台有 plugin.json，把路径加进 <code>version-sync.mjs</code> 的 TARGETS。</li>
+  </ol>
+
+  <h3>想加一个新工具</h3>
+  <ol>
+    <li>在 server.ts 用 <code>server.registerTool()</code> 注册（描述必须按 ADR-0002 的 WHEN/WHEN NOT/RETURNS/EXAMPLE 格式）。</li>
+    <li>handler 内先跑安全关卡（shell → <code>checkDenyPolicy</code>；文件 → <code>checkFilePathDenyPolicy</code>/<code>checkProjectBoundary</code>）。</li>
+    <li>返回一律包 <code>trackResponse()</code>（否则统计断档）；布尔参数用 <code>coerceBoolean</code> 而不是 <code>z.coerce.boolean()</code>。</li>
+    <li>注册必须在模块顶层、且在 <code>installStrictClientSchemaCompat()</code> 调用之前（顺序在文件末尾收口）。</li>
+  </ol>
+
+  <h3>常见陷阱（读代码时容易踩的）</h3>
+  <ul>
+    <li><strong>别在 sandbox 里期待写文件生效</strong>：ctx_execute 的沙箱文件系统会被丢弃，持久写必须走宿主 Write/Edit（routing block 里也写明了）。</li>
+    <li><strong><code>NODE_OPTIONS</code> 被 env 净化禁掉</strong>：批量执行的 FS 统计靠命令串前缀注入，不是环境变量。</li>
+    <li><strong>hook 永远 exit 0</strong>：排查"为什么没拦住"要去 <code>hook-errors.log</code>，而不是看退出码。</li>
+    <li><strong>重定向只在 MCP 就绪时发生</strong>：哨兵是 90s 新鲜度窗口，调试时留意 /tmp 哨兵是否还在刷新。</li>
+    <li><strong>ctx_search 有防刷闸</strong>：自动化脚本里连搜会被 60s 窗口限制，批量问题请用一次 <code>ctx_batch_execute</code>。</li>
+    <li><strong>SessionDB 没有 FTS5</strong>：事件检索是 LIKE；全文检索发生在 ContentStore（events.md 被索引后）。</li>
+    <li><strong>改 server.ts 要跑全部断言</strong>：bundle 与 schema 兼容层都在文件尾部顺序敏感。</li>
+  </ul>
+</section>
+
+<!-- ════════════════════ 09 文件索引 ════════════════════ -->
+<section id="s9">
+  <h2><span class="h2num">09</span>关键文件索引</h2>
+  <p class="h2note">如果只读 3 个文件：<code>src/server.ts</code> 开头 500 行、<code>hooks/core/routing.mjs</code>、<code>src/store.ts</code> 的 schema 段。若读 10 个，加上下列。</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>文件</th><th>为什么读它</th></tr></thead>
+    <tbody>
+      <tr><td><code>src/server.ts</code></td><td>全部工具 handler、输出分级、统计、启动序列；文件内 "Issue #NNN" 注释就是功能说明书</td></tr>
+      <tr><td><code>src/executor.ts</code></td><td>沙箱全部机密：env denylist、进程组、Windows 特判</td></tr>
+      <tr><td><code>src/security.ts</code></td><td>策略求值算法（纯函数，好测试）</td></tr>
+      <tr><td><code>src/store.ts</code></td><td>FTS5 schema + 分块 + 检索管线（含 RRF/邻近/纠错）</td></tr>
+      <tr><td><code>src/session/db.ts</code></td><td>会话库 schema、去重淘汰、快照领取</td></tr>
+      <tr><td><code>src/session/extract.ts</code></td><td>约 30 类事件是怎么从宿主输入里抠出来的</td></tr>
+      <tr><td><code>hooks/core/routing.mjs</code></td><td>拦截路由的完整决策逻辑（最值得整体通读的 hook 文件）</td></tr>
+      <tr><td><code>hooks/routing-block.mjs</code></td><td>注入给模型的指令文本（105 行，改文案先读它）</td></tr>
+      <tr><td><code>start.mjs</code></td><td>宿主真正的入口：自愈/依赖/完整度闸全在这</td></tr>
+      <tr><td><code>docs/adr/</code></td><td>四篇架构决策：多写者 DB、工具描述风格、deny 文案、统计口径</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ════════════════════ 10 未解 ════════════════════ -->
+<section id="s10">
+  <h2><span class="h2num">10</span>未解问题摘要</h2>
+  <ul>
+    <li><span class="tag tag-u">未知</span> README 声称 "11 languages"，代码枚举 12 个语言——文档口径漂移，以代码为准。</li>
+    <li><span class="tag tag-u">未知</span> <code>getRoutingInstructions()</code>（读 configs/&lt;platform&gt;/AGENTS.md）在 src/ 内没有调用点，推测供 doctor/upgrade 或外部工具使用。</li>
+    <li><span class="tag tag-u">未知</span> <code>getDBSizeBytes()</code> 无调用方；FTS5 <code>source_category</code> 列恒为 NULL——两处预留字段。</li>
+    <li><span class="tag tag-u">未知</span> 遥测链路（<code>platform.json</code> → 平台服务端）与 insight 仪表盘后端不在本仓库，无法审计。</li>
+    <li><span class="tag tag-u">未知</span> 真实 LLM 端到端冒烟（tier2-e2e-smoke）目前只实现了 Pi，其他平台是占位。</li>
+    <li><span class="tag tag-u">未知</span> 安装量数字（stats.json，682.1k+）由外部统计生成，无法在仓库内核实。</li>
+  </ul>
+</section>
+
+<footer class="docfoot">
+  context-mode 核心架构全解 · 基于 commit dbec980 / v1.0.169 只读分析 · 生成于 2026-10-14 · 单文件离线文档（无外部请求）· 事实/推断/未知三分法
+</footer>
+
+</main>
+</div>
+</body>
+</html>
