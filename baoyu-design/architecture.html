@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>baoyu-design 核心架构全解</title>
+<style>
+:root{
+  --bg:#faf9f7; --panel:#fff; --ink:#1c1a17; --muted:#6b655c; --line:#e6e1d8;
+  --accent:#c2571a; --accent-soft:#fdf1e7; --code-bg:#f4f1ea; --code-ink:#3d3a33;
+  --fact:#1a7f37; --fact-bg:#e9f6ee; --infer:#8a5a00; --infer-bg:#fdf3e0; --unknown:#7a3b8f; --unknown-bg:#f7ecfa;
+  --warn:#b42318; --warn-bg:#fdecea;
+  --radius:10px; --maxw:1200px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.75 -apple-system,"SF Pro Text","PingFang SC","Noto Sans SC","Segoe UI",sans-serif;}
+h1,h2,h3,h4{line-height:1.3;font-weight:650;text-wrap:balance}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code,pre{font-family:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;font-size:.86em}
+code{background:var(--code-bg);color:var(--code-ink);padding:.12em .38em;border-radius:5px}
+pre{background:var(--code-bg);color:var(--code-ink);padding:14px 16px;border-radius:var(--radius);overflow:auto;line-height:1.6;border:1px solid var(--line)}
+pre code{background:none;padding:0}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 22px}
+.badge{display:inline-block;font-size:12px;line-height:1.5;padding:1px 8px;border-radius:999px;border:1px solid;vertical-align:middle;white-space:nowrap}
+.fact{color:var(--fact);background:var(--fact-bg);border-color:#bfe3cb}
+.infer{color:var(--infer);background:var(--infer-bg);border-color:#f0d9a8}
+.unknown{color:var(--unknown);background:var(--unknown-bg);border-color:#e2c8ec}
+.warn{color:var(--warn);background:var(--warn-bg);border-color:#f2b8b2}
+h2 .badge{font-size:11px;margin-left:8px}
+
+/* header */
+header.hero{background:linear-gradient(180deg,#fff 0%,var(--bg) 100%);border-bottom:1px solid var(--line);padding:46px 0 34px}
+.hero h1{font-size:34px;margin:0 0 8px}
+.hero .sub{color:var(--muted);font-size:17px;max-width:860px;margin:0}
+.meta{margin-top:16px;display:flex;flex-wrap:wrap;gap:8px}
+.meta .chip{font-size:12.5px;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:3px 11px}
+.legend{margin-top:18px;font-size:13.5px;color:var(--muted)}
+.legend .badge{margin-right:4px}
+
+/* layout */
+.layout{display:grid;grid-template-columns:250px 1fr;gap:36px;max-width:var(--maxw);margin:0 auto;padding:30px 22px 80px}
+nav.toc{position:sticky;top:18px;align-self:start;font-size:14px;border:1px solid var(--line);background:var(--panel);border-radius:var(--radius);padding:14px 16px;max-height:calc(100vh - 40px);overflow:auto}
+nav.toc b{display:block;font-size:12.5px;letter-spacing:.06em;color:var(--muted);margin:10px 0 6px;text-transform:uppercase}
+nav.toc a{display:block;color:var(--ink);padding:2.5px 0;border-radius:4px}
+nav.toc a:hover{color:var(--accent);text-decoration:none}
+main{min-width:0}
+section{margin:0 0 54px}
+h2{font-size:25px;margin:0 0 6px;padding-top:8px}
+h2 + .lead{color:var(--muted);margin:0 0 20px;font-size:15.5px}
+h3{font-size:19px;margin:30px 0 8px}
+h4{font-size:16px;margin:22px 0 6px}
+p{margin:10px 0}
+ul,ol{margin:10px 0;padding-left:24px}
+li{margin:5px 0}
+.small{font-size:13.5px;color:var(--muted)}
+
+/* cards */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin:14px 0}
+.card h4{margin-top:0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:0 var(--radius) var(--radius) 0;padding:12px 16px;margin:14px 0}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-bg)}
+.callout.ok{border-left-color:var(--fact);background:var(--fact-bg)}
+.callout p{margin:4px 0}
+
+/* tables */
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14.5px;background:var(--panel)}
+th,td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
+th{background:var(--code-bg);font-weight:600}
+td code{white-space:nowrap}
+
+/* diagrams */
+.fig{margin:20px 0;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+.fig svg{display:block;max-width:100%;height:auto;margin:0 auto}
+.fig figcaption{font-size:13px;color:var(--muted);text-align:center;margin-top:10px}
+.tree{font-size:13.5px;line-height:1.7}
+
+/* flow steps */
+.steps{counter-reset:step;margin:18px 0}
+.step{position:relative;margin:0 0 12px;padding:13px 16px 13px 58px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius)}
+.step::before{counter-increment:step;content:counter(step);position:absolute;left:15px;top:13px;width:27px;height:27px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
+.step b.t{display:block;margin-bottom:2px}
+.step .src{font-size:12.5px;color:var(--muted)}
+.step .why{font-size:13.5px;color:var(--muted);margin-top:4px}
+
+kbd{background:#fff;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:0 6px;font-size:13px;font-family:inherit}
+
+footer{border-top:1px solid var(--line);padding:26px 0 60px;color:var(--muted);font-size:13.5px}
+@media (max-width:900px){.layout{grid-template-columns:1fr}nav.toc{position:static;max-height:none}.grid2,.grid3{grid-template-columns:1fr}}
+@media print{nav.toc{display:none}.layout{display:block}header.hero{padding:10px 0}.step{break-inside:avoid}section{break-inside:avoid-page}}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>baoyu-design 核心架构全解</h1>
+    <p class="sub">把 Claude Design（claude.ai/design 的设计引擎）打包成「可移植 Agent Skill」：本地编码 Agent 在编辑器内产出自我包含 HTML 设计物，并配套设计了从设计系统、Figma 导入到 PPTX / 视频导出的完整本地工具链。</p>
+    <div class="meta">
+      <span class="chip">版本 1.3.0</span>
+      <span class="chip">MIT License</span>
+      <span class="chip">维护者：Jim Liu 宝玉</span>
+      <span class="chip">调研 HEAD：6530033（v1.3.0）</span>
+      <span class="chip">调研日期：2026-10-14</span>
+      <span class="chip">本页为离线单文件，无任何外部请求</span>
+    </div>
+    <div class="legend">
+      标注体系：<span class="badge fact">事实</span> 有文件:行 / 命令出处 ·
+      <span class="badge infer">推断</span> 由事实推导 ·
+      <span class="badge unknown">未知</span> 未弄清，不猜 ·
+      <span class="badge warn">注意</span> 已发现的错位/陷阱
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+<nav class="toc">
+  <b>目录</b>
+  <a href="#s1">一、这是什么（定位与名词）</a>
+  <a href="#s2">二、如何运行</a>
+  <a href="#s3">三、分层与依赖方向</a>
+  <a href="#s4">四、主流程时序（入门→精通主干）</a>
+  <a href="#s5">五、核心机制逐条拆解</a>
+  <a href="#s6">六、模块/能力地图</a>
+  <a href="#s7">七、本地工具链深潜</a>
+  <a href="#s8">八、工程化与测试</a>
+  <a href="#s9">九、扩展点与常见陷阱</a>
+  <a href="#s10">十、关键文件索引</a>
+  <a href="#s11">十一、未解问题摘要</a>
+</nav>
+
+<main>
+
+<!-- ============================================================= -->
+<section id="s1">
+<h2>一、这是什么 <span class="badge fact">事实</span></h2>
+<p class="lead">一句话：<b>baoyu-design 是 Claude Design 的可移植重打包</b>——技能本体是 Markdown 提示词 + 无构建 JSX 脚手架 + Node/TS 本地工具链，让 Cursor / Claude Code / Codex 等本地 Agent 在编辑器内完成"提问 → 设计 → 预览 → 导出"全流程，产物是自我包含的 HTML。</p>
+
+<div class="grid2">
+  <div class="card">
+    <h4>它是</h4>
+    <ul>
+      <li>一套<b>设计方法论 + 工艺标准</b>（<code>system-prompt.md</code>，323 行）</li>
+      <li>一套<b>按需加载的专项技能库</b>（<code>built-in-skills/</code> ~50 个提示词）</li>
+      <li>一套<b>无构建脚手架</b>（<code>starter-components/</code> 27 个组件）</li>
+      <li>一套<b>本地工具链</b>（<code>agents/</code>：导入 / 编译 / 预览 / 导出）</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>它不是</h4>
+    <ul>
+      <li>不是运行时框架或 npm 应用（仓库 <code>private: true</code>，无发包）</li>
+      <li>不是网站/服务（没有服务器代码，一切在本地文件系统）</li>
+      <li>不是 Anthropic 官方项目（独立社区维护，README 明言无隶属关系）</li>
+      <li>不是通用 HTML→PPTX 转换器（只导出本技能构建的 deck）</li>
+    </ul>
+  </div>
+</div>
+
+<h3>名词表（读后续章节前先记住这些）</h3>
+<table>
+<tr><th>名词</th><th>含义</th><th>出处</th></tr>
+<tr><td><b>Harness</b></td><td>承载技能的本地 Agent 环境（Claude Code / Cursor / Codex…）。各 harness 的"提问、预览、截图、验证"工具不同，用 <code>references/&lt;harness&gt;.md</code> 映射。</td><td><code>system-prompt.md:6-16</code></td></tr>
+<tr><td><b>Agent Skill</b></td><td>可被 Agent 自动激活的目录（<code>SKILL.md</code> + 资源），本项目的分发单元是 <code>skills/baoyu-design/</code> 整个目录。</td><td><code>SKILL.md</code></td></tr>
+<tr><td><b>built-in skill</b></td><td>技能内部的专项提示词（deck、mobile、import、export…），按需 Read 加载。</td><td><code>built-in-skills/*.md</code></td></tr>
+<tr><td><b>starter component</b></td><td>复制即用的脚手架（deck-stage、design-canvas、设备外壳…），无构建步骤。</td><td><code>starter-components/</code></td></tr>
+<tr><td><b>设计系统（DS）</b></td><td>品牌 token + 组件 + 指南组成的可复用包；磁盘上身是根目录带 <code>_ds_manifest.json</code> 的文件夹。</td><td><code>use-design-system.md:11-20</code></td></tr>
+<tr><td><b>项目（project）</b></td><td>一次设计任务的工作目录 <code>designs/&lt;slug&gt;/</code>；根目录带 <code>_d_meta.json</code> 记录绑定与资产。</td><td>同上</td></tr>
+<tr><td><code>_ds/&lt;slug&gt;/</code></td><td>项目内嵌的设计系统<b>版本化快照</b>（自包含），随项目交付。</td><td><code>import-design-system.mjs</code></td></tr>
+<tr><td><code>_d_meta.json</code></td><td>项目元数据：设计系统绑定 <code>designSystems[]</code>、主系统 <code>primaryDesignSystem</code>、资产索引 <code>assets{}</code>。</td><td><code>use-design-system.md:105-136</code></td></tr>
+<tr><td><b>deck-stage</b></td><td>幻灯片舞台 Web Component：缩放、导航、缩略图 rail、打印、<code>data-anim</code> 构建动画。</td><td><code>starter-components/deck-stage.js</code></td></tr>
+<tr><td><b>data-anim</b></td><td>幻灯片构建动画的属性约定（48 种效果）；浏览器内播放，导出为<b>原生 PowerPoint 动画</b>。</td><td><code>make-a-deck.md</code> "Animations"</td></tr>
+<tr><td><b>时间线桥</b></td><td>页面对导出器暴露的 seek 接口：v1 是 <code>window.__animStage</code>（<code>setTime</code>），v2/v3 是 DOM 事件 <code>data-om-seek-to-time-frame</code>。两套并存。</td><td><code>animations*.jsx</code>；见 §7.2 警示</td></tr>
+<tr><td><b>gen-pptx / gen-video</b></td><td>两个本地 TS CLI：HTML deck→PPTX；时间线动画→MP4/WebM/GIF。</td><td><code>agents/gen-pptx/</code>、<code>agents/gen-video/</code></td></tr>
+<tr><td><b>上游快照</b></td><td>从 claude.ai/design 反混淆 bundle 提取的内容（<code>references/upstream-*</code>），同步时以保护清单避免洗掉本地增强。</td><td><code>references/upstream-sync/</code></td></tr>
+</table>
+</section>
+
+<!-- ============================================================= -->
+<section id="s2">
+<h2>二、如何运行</h2>
+<p class="lead">三种视角：把它装进你的 Agent（用户视角）、跑起预览（日常）、开发/验证这个仓库（贡献者视角）。</p>
+
+<h3>2.1 用户视角：安装与使用 <span class="badge fact">事实</span></h3>
+<pre><code># 推荐：Vercel Labs 的 skills CLI（自动探测你的 agent）
+npx skills add JimLiu/baoyu-design          # 安装到当前项目
+npx skills add JimLiu/baoyu-design -g       # 安装到用户级（所有项目可用）
+npx skills update baoyu-design              # 更新
+
+# 或者零安装：把 repo URL 丢给 agent，让它自己 fetch 并读 SKILL.md</code></pre>
+<p>之后直接用自然语言描述需求（"给冥想 App 设计 3 个设置的 hi-fi 变体"）；Claude Code 里也可用 <code>/baoyu-design</code> 显式触发。Agent 会自动：读方法论 → 识别 harness → 载入对应 built-in skill → 提问确认 → 在 <code>designs/&lt;project&gt;/</code> 下产出 HTML → 起 HTTP 预览让你查看。</p>
+
+<h3>2.2 预览（交付物必须走 HTTP） <span class="badge fact">事实</span></h3>
+<pre><code>python3 -m http.server 4311 --directory designs
+# 打开 http://localhost:4311/&lt;项目&gt;/&lt;文件&gt;.html</code></pre>
+<div class="callout warn"><p><b>为什么必须 HTTP：</b>多文件原型用 <code>&lt;script type="text/babel" src="…jsx"&gt;</code> 加载组件，浏览器在 <code>file://</code> 下会因跨源限制<b>静默失败</b>；统一用 4311 一个 server 服务整个 <code>designs/</code>。</p>
+<p class="small">出处：<code>system-prompt.md:146,185</code>。</p></div>
+
+<h3>2.3 仓库自身（开发/验证） <span class="badge fact">事实</span></h3>
+<pre><code>npm test        # node --test skills/baoyu-design/agents/tests/*.test.mjs（零依赖）
+
+# 导出工具的一次性构建（用不到可跳过）
+cd skills/baoyu-design/agents/gen-pptx &amp;&amp; npm install &amp;&amp; npx playwright install chromium &amp;&amp; npm run build
+cd skills/baoyu-design/agents/gen-video &amp;&amp; npm install &amp;&amp; npx playwright install chromium &amp;&amp; npm run build
+# gen-video 另需 ffmpeg 在 PATH（macOS: brew install ffmpeg）</code></pre>
+
+<h3>2.4 仓库结构鸟瞰</h3>
+<div class="fig"><pre class="tree"><code>baoyu-design/
+├── README.md / README.zh-CN.md / CHANGELOG.md / CHANGELOG.zh.md
+├── package.json                      <span style="color:#8a8270"># v1.3.0；test 脚本</span>
+├── assets/                           <span style="color:#8a8270"># README 截图 + 管线 SVG（不参与运行）</span>
+├── .github/workflows/tests.yml       <span style="color:#8a8270"># CI：Node 22 跑 npm test</span>
+├── .claude/skills/release-skills/    <span style="color:#8a8270"># 本仓库发版用的技能（不随技能分发）</span>
+└── skills/baoyu-design/              <span style="color:#c2571a">★ 技能本体（安装后整体进用户机器）</span>
+    ├── SKILL.md                      <span style="color:#8a8270"># 入口：5 步编排（61 行）</span>
+    ├── system-prompt.md              <span style="color:#8a8270"># 方法论 &amp; craft 标准（323 行，唯一事实源）</span>
+    ├── project-types.json            <span style="color:#8a8270"># 13 类项目→skill+starter 路由表</span>
+    ├── references/                   <span style="color:#8a8270"># claude/cursor/codex 工具映射 + 上游快照/溯源</span>
+    ├── built-in-skills/              <span style="color:#8a8270"># ~50 个按需提示词（2696 行）</span>
+    ├── starter-components/           <span style="color:#8a8270"># 27 个无构建脚手架（约 21481 行）</span>
+    └── agents/                       <span style="color:#8a8270"># 本地工具链</span>
+        ├── gen-pptx/  gen-video/     <span style="color:#8a8270"># TS CLI（Playwright 驱动）</span>
+        ├── import-figma.mjs  lib/fig-*  <span style="color:#8a8270"># 离线 .fig 解码</span>
+        ├── compile/check/import-design-system.mjs  build-preview.mjs  <span style="color:#8a8270"># 设计系统流水线</span>
+        ├── record-asset.mjs  lib/asset-store.mjs  <span style="color:#8a8270"># 资产记录</span>
+        ├── tests/                    <span style="color:#8a8270"># node --test 测试 + fixtures</span>
+        └── vendor/                   <span style="color:#8a8270"># React/Babel/fflate/fig-materialize（离线依赖）</span></code></pre></div>
+</section>
+
+<!-- ============================================================= -->
+<section id="s3">
+<h2>三、分层与依赖方向 <span class="badge fact">事实</span></h2>
+<p class="lead">六层单向依赖：上层只以<b>相对路径</b>引用下层；工具链永远不会被内联进交付物，只在 Agent 构建过程中被调用。</p>
+
+<div class="fig">
+<svg viewBox="0 0 900 560" role="img" aria-label="分层架构图">
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#c2571a"/></marker>
+  </defs>
+  <style>
+    .lyr{fill:#fff;stroke:#e6e1d8;stroke-width:1.5;rx:10}
+    .lyrA{fill:#fdf1e7;stroke:#e8c3a4}
+    .lt{font:600 15px -apple-system,"PingFang SC",sans-serif;fill:#1c1a17}
+    .ls{font:12px -apple-system,"PingFang SC",sans-serif;fill:#6b655c}
+    .fl{stroke:#c2571a;stroke-width:1.6;fill:none;marker-end:url(#arr)}
+    .flt{font:12px -apple-system,"PingFang SC",sans-serif;fill:#c2571a}
+    .side{font:12px -apple-system,"PingFang SC",sans-serif;fill:#8a8270}
+  </style>
+  <!-- 1 用户 -->
+  <rect class="lyr lyrA" x="150" y="16" width="420" height="58" rx="10"/>
+  <text class="lt" x="170" y="40">① 用户 / 任务</text>
+  <text class="ls" x="170" y="60">「设计设置页」「做 10 页 PPT」「把这个 .fig 变成设计系统」</text>
+  <!-- 2 编排 -->
+  <rect class="lyr lyrA" x="150" y="94" width="420" height="72" rx="10"/>
+  <text class="lt" x="170" y="118">② 编排层（Markdown）</text>
+  <text class="ls" x="170" y="138">SKILL.md（5 步编排） · project-types.json（13 类路由）</text>
+  <text class="ls" x="170" y="155">agents/ 脚本由 Agent 在构建中调用，不进交付物</text>
+  <!-- 3 方法论/技能/harness -->
+  <rect class="lyr" x="60" y="186" width="240" height="86" rx="10"/>
+  <text class="lt" x="76" y="210">③a 方法论</text>
+  <text class="ls" x="76" y="230">system-prompt.md</text>
+  <text class="ls" x="76" y="248">（craft 唯一事实源）</text>
+  <text class="ls" x="76" y="264">323 行</text>
+  <rect class="lyr" x="315" y="186" width="240" height="86" rx="10"/>
+  <text class="lt" x="331" y="210">③b 专项技能</text>
+  <text class="ls" x="331" y="230">built-in-skills/*.md</text>
+  <text class="ls" x="331" y="248">（按需 Read ~50 个）</text>
+  <rect class="lyr" x="570" y="186" width="240" height="86" rx="10"/>
+  <text class="lt" x="586" y="210">③c harness 适配</text>
+  <text class="ls" x="586" y="230">references/&lt;harness&gt;.md</text>
+  <text class="ls" x="586" y="248">（工具调用唯一事实源）</text>
+  <!-- 4 脚手架 -->
+  <rect class="lyr" x="150" y="292" width="420" height="64" rx="10"/>
+  <text class="lt" x="170" y="316">④ 脚手架（复制即用，无构建）</text>
+  <text class="ls" x="170" y="336">deck-stage · design-canvas · animations-v3 · 设备/社交外壳 · image-slot …</text>
+  <!-- 5 工具链 -->
+  <rect class="lyr" x="150" y="376" width="420" height="72" rx="10"/>
+  <text class="lt" x="170" y="400">⑤ 本地工具链（Node/TS，构建期调用）</text>
+  <text class="ls" x="170" y="420">import/compile/check-design-system · build-preview · import-figma</text>
+  <text class="ls" x="170" y="437">record-asset · gen-pptx · gen-video</text>
+  <!-- 6 交付物 -->
+  <rect class="lyr lyrA" x="150" y="468" width="420" height="72" rx="10"/>
+  <text class="lt" x="170" y="492">⑥ 交付物（自我包含）</text>
+  <text class="ls" x="170" y="512">designs/&lt;project&gt;/：HTML + _ds/ 快照 + _d_meta.json</text>
+  <text class="ls" x="170" y="529">导出物：.pptx / .mp4 / PDF / 单文件 HTML</text>
+  <!-- arrows -->
+  <line class="fl" x1="360" y1="74" x2="360" y2="94"/>
+  <line class="fl" x1="240" y1="166" x2="200" y2="186"/>
+  <line class="fl" x1="360" y1="166" x2="360" y2="186"/>
+  <line class="fl" x1="480" y1="166" x2="520" y2="186"/>
+  <line class="fl" x1="360" y1="272" x2="360" y2="292"/>
+  <line class="fl" x1="360" y1="356" x2="360" y2="376"/>
+  <line class="fl" x1="360" y1="448" x2="360" y2="468"/>
+  <text class="side" x="600" y="400">依赖规则：</text>
+  <text class="side" x="600" y="418">· 只向下引用（相对路径）</text>
+  <text class="side" x="600" y="436">· ⑤ 只在构建期被调用</text>
+  <text class="side" x="600" y="454">· ⑥ 永远自包含：拷贝项目</text>
+  <text class="side" x="600" y="472">  文件夹即可运行</text>
+</svg>
+<figcaption>图 1 · 分层与依赖方向（事实：SKILL.md:62-65 的职责声明；import-design-system.mjs:8-10 的"只写 _ds/ 与 _d_meta.json"约定）</figcaption>
+</div>
+</section>
+
+<!-- ============================================================= -->
+<section id="s4">
+<h2>四、主流程时序（入门 → 精通主干）</h2>
+<p class="lead">一次典型的设计任务从进入到出结果的完整链路。这是理解整个项目的骨架——每一格都标了对应源码位置，方便你直接跳进文件。</p>
+
+<div class="steps">
+  <div class="step"><b class="t">触发与读入口</b>
+    Agent 因 <code>description</code> 自动激活技能（或用户显式 <code>/baoyu-design</code>），读 <code>SKILL.md</code>：先载方法论，再识别 harness。<span class="src">SKILL.md:23-40</span></div>
+  <div class="step"><b class="t">识别 harness、载工具映射</b>
+    看自己有哪些工具（如 <code>AskUserQuestion</code>+<code>SendUserFile</code> → Claude Code），读 <code>references/&lt;harness&gt;.md</code> 定下"问用户/预览/截图/验证"的具体调用法。<span class="src">system-prompt.md:10-14；references/*.md</span></div>
+  <div class="step"><b class="t">路由：载入 built-in skill</b>
+    按 <code>project-types.json</code> 13 类路由或关键词载入 <code>built-in-skills/*.md</code>；默认（普通设计）载 <code>hi-fi-design</code>+<code>interactive-prototype</code>。<span class="src">SKILL.md:42-60；project-types.json</span>
+    <div class="why">这层是"需要才加载"的渐进式披露，避免把 50 个提示词一次性塞进上下文。</div></div>
+  <div class="step"><b class="t">提一轮结构化问题（必做）</b>
+    确认：设计上下文（UI kit / 设计系统 / 代码库 / 截图）、变体维度与数量、保存位置（默认 <code>designs/&lt;slug&gt;/</code>）、要用哪个设计系统（多选）。<span class="src">system-prompt.md:154-179；use-design-system.md 步骤 2</span>
+    <div class="why">硬规则：<b>每个新项目都当 fresh start</b>——即便和上次请求一样，也不允许拿记忆里的方向当默认值。</div></div>
+  <div class="step"><b class="t">发现并绑定设计系统（如选择）</b>
+    <code>glob designs/*/_ds_manifest.json</code> 发现可用系统 → 对每个选中的跑
+    <code>node agents/import-design-system.mjs &lt;dsDir&gt; &lt;projectDir&gt; [--primary]</code>：
+    同步 <code>@import</code> 闭包 CSS + <code>url()</code> 资产 + bundle 到 <code>_ds/&lt;slug&gt;/</code>，
+    生成 <code>_ds_prompt.md</code>，合并写 <code>_d_meta.json</code>。<span class="src">import-design-system.mjs:100-200</span>
+    <div class="why">绑定是"版本化快照"：项目自包含；刷新 = 重跑 import（幂等）。</div></div>
+  <div class="step"><b class="t">把 _ds_prompt.md 当作 binding 视觉契约</b>
+    读 <code>_ds/&lt;slug&gt;/_ds_prompt.md</code>：接线代码（React UMD + 全部 <code>&lt;link&gt;</code> + bundle <code>&lt;script&gt;</code>）、组件用法摘录、props 契约、token 白名单。只能用白名单里的 <code>var(--*)</code>，不得自创颜色/组件。<span class="src">ds-prompt.mjs:154-286；use-design-system.md 步骤 5</span></div>
+  <div class="step"><b class="t">产出交付物</b>
+    复制需要的 starter（如 <code>cp starter-components/deck-stage.js designs/&lt;p&gt;/</code>）；写 HTML——多文件时用 React+Babel（固定版本 CDN + integrity）或按脚手架约定；静态内容保持"直接可编辑"（叶子元素、写死重复结构）。<span class="src">system-prompt.md:52-97；make-a-deck.md 第 3 段</span></div>
+  <div class="step"><b class="t">记录资产</b>
+    <code>node agents/record-asset.mjs &lt;projectDir&gt; "&lt;file&gt;"</code> → 写入/建出 <code>_d_meta.json</code>（无设计系统的项目也会被创建）。用户审阅后以 <code>--status approved|changes-requested</code> 原地翻转状态。<span class="src">record-asset.mjs 头注释</span></div>
+  <div class="step"><b class="t">HTTP 预览 + 验证 + 交付</b>
+    起 4311 服务 → harness 浏览器工具截图/查控制台（若模型不支持图像输入，先跑 vision probe 并降级为文本/DOM 校验）→ 修错重验 → <b>把"运行中的预览"作为交付的一部分</b>呈现给用户（URL + 文件）。<span class="src">system-prompt.md:181-187；references/claude.md "Vision input probe"</span></div>
+</div>
+
+<div class="callout"><p><b>导出支线</b>（随时可插入）：deck 完成 → 说"导出 PPTX" → gen-pptx CLI（可编辑模式默认，含原生动画）；时间线动画完成 → gen-video CLI → .mp4。细节见 §7。</p></div>
+</section>
+
+<!-- ============================================================= -->
+<section id="s5">
+<h2>五、核心机制逐条拆解</h2>
+<p class="lead">八条机制构成这个项目的"设计逻辑"。读懂它们，你就理解了为什么文件被安排成这样。</p>
+
+<h3>5.1 可移植性 = 同一套 craft × 各 harness 的薄适配 <span class="badge fact">事实</span></h3>
+<ul>
+  <li>方法论只写"能力名"（问用户、预览、截图、验证），不写具体工具；工具查 <code>references/&lt;harness&gt;.md</code>。<span class="small">system-prompt.md:6-16</span></li>
+  <li>识别规则是"你有哪种工具→你是什么 harness"（见名词表）；不认识的环境走通用兜底流程。</li>
+  <li><span class="badge infer">推断</span> 新增一个 harness 的成本 = 一张工具映射表 + 识别行加一条，方法论零改动。</li>
+</ul>
+
+<h3>5.2 按需加载（渐进式披露）的路由 <span class="badge fact">事实</span></h3>
+<ul>
+  <li>三份路由并存：<code>project-types.json</code>（机器可读 13 类）/ <code>system-prompt.md</code> 表格（人读）/ <code>SKILL.md</code> 分支（编排）。</li>
+  <li>三方一致性由测试守护（<code>project-types.test.mjs</code> 断言三处都提到全部 13 类，且对应文件含指定 marker 串）。</li>
+</ul>
+
+<h3>5.3 设计系统：「绑定即契约」的版本化快照 <span class="badge fact">事实</span></h3>
+<div class="fig">
+<svg viewBox="0 0 900 340" role="img" aria-label="设计系统生命周期">
+ <style>
+  .bx{fill:#fff;stroke:#e6e1d8;stroke-width:1.5;rx:9}
+  .bxA{fill:#fdf1e7;stroke:#e8c3a4}
+  .t{font:600 13.5px -apple-system,"PingFang SC",sans-serif;fill:#1c1a17}
+  .s{font:11.5px -apple-system,"PingFang SC",sans-serif;fill:#6b655c}
+  .a{stroke:#c2571a;stroke-width:1.5;fill:none;marker-end:url(#arr2)}
+  .h{font:600 14px -apple-system,"PingFang SC",sans-serif;fill:#c2571a}
+ </style>
+ <defs><marker id="arr2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#c2571a"/></marker></defs>
+ <text class="h" x="30" y="30">创作侧（authoring）</text>
+ <rect class="bx" x="30" y="44" width="170" height="66"/>
+ <text class="t" x="46" y="68">components/ + tokens/</text>
+ <text class="s" x="46" y="86">.jsx/.tsx + .d.ts</text>
+ <text class="s" x="46" y="102">+ *.prompt.md</text>
+ <rect class="bx bxA" x="230" y="44" width="150" height="66"/>
+ <text class="t" x="246" y="68">compile-design-</text>
+ <text class="t" x="246" y="84">system.mjs</text>
+ <text class="s" x="246" y="102">Node 内 vendored Babel</text>
+ <rect class="bx" x="410" y="44" width="170" height="66"/>
+ <text class="t" x="426" y="68">_ds_bundle.js</text>
+ <text class="s" x="426" y="86">_ds_manifest.json</text>
+ <text class="s" x="426" y="102">_adherence.oxlintrc.json</text>
+ <rect class="bx" x="610" y="44" width="120" height="66"/>
+ <text class="t" x="626" y="68">check-</text>
+ <text class="t" x="626" y="84">design-system</text>
+ <text class="s" x="626" y="102">只读校验器</text>
+ <rect class="bx" x="750" y="44" width="120" height="66"/>
+ <text class="t" x="766" y="68">build-preview</text>
+ <text class="s" x="766" y="86">preview.html</text>
+ <text class="s" x="766" y="102">单文件审阅页</text>
+ <line class="a" x1="200" y1="77" x2="230" y2="77"/>
+ <line class="a" x1="380" y1="77" x2="410" y2="77"/>
+ <line class="a" x1="580" y1="77" x2="610" y2="77"/>
+ <line class="a" x1="730" y1="77" x2="750" y2="77"/>
+
+ <text class="h" x="30" y="180">消费侧（consuming）</text>
+ <rect class="bx" x="30" y="194" width="150" height="66"/>
+ <text class="t" x="46" y="218">设计系统文件夹</text>
+ <text class="s" x="46" y="236">（根有 _ds_manifest）</text>
+ <rect class="bx bxA" x="210" y="194" width="190" height="66"/>
+ <text class="t" x="226" y="218">import-design-</text>
+ <text class="t" x="226" y="234">system.mjs</text>
+ <text class="s" x="226" y="252">拷贝闭包 + 生成 prompt</text>
+ <rect class="bx" x="430" y="194" width="180" height="66"/>
+ <text class="t" x="446" y="218">项目 _ds/&lt;slug&gt;/</text>
+ <text class="s" x="446" y="236">快照 + _ds_prompt.md</text>
+ <rect class="bx bxA" x="640" y="194" width="230" height="66"/>
+ <text class="t" x="656" y="218">项目 HTML 按 binding 构建</text>
+ <text class="s" x="656" y="236">+ _d_meta.json 记录绑定</text>
+ <line class="a" x1="180" y1="227" x2="210" y2="227"/>
+ <line class="a" x1="400" y1="227" x2="430" y2="227"/>
+ <line class="a" x1="610" y1="227" x2="640" y2="227"/>
+ <text class="s" x="30" y="300">重跑 import = 拉更新（幂等）；多系统共存：JS 靠 window.&lt;Namespace&gt; 隔离，CSS 靠 &lt;link&gt; 顺序（primary 最后加载胜出）。</text>
+</svg>
+<figcaption>图 2 · 设计系统生命周期（事实：compile-design-system.mjs:2-15；import-design-system.mjs；use-design-system.md）</figcaption>
+</div>
+<ul>
+  <li><b>根标记区分</b>：DS 根有 <code>_ds_manifest.json</code>；项目根有 <code>_d_meta.json</code>。所以 <code>glob designs/*/_ds_manifest.json</code> 只会命中"被创作的系统"，不会命中项目里的消费副本（副本的 manifest 深一层）。</li>
+  <li><b>拷贝集确定性</b>：导入器复用只读解析器 <code>ds-core.mjs</code> 算出的 <code>@import</code> 后序闭包 + 这些 CSS 的本地 <code>url()</code> 目标，外加 bundle/manifest/adherence/README/SKILL 与 <code>assets/</code>。绝不碰源树。</li>
+  <li><b>binding 的载体是生成的 <code>_ds_prompt.md</code></b>：固定版本 React 标签、全部接线行、组件 props 契约（枚举值完整）、token 白名单、"text/babel 顶层禁用 window 全局名"清单（<code>status/name/open/…</code>，因为 Babel 注入成 classic script 会把顶层 const 变成 window 属性）。</li>
+</ul>
+
+<h3>5.4 资产记录与项目恢复（_d_meta.json） <span class="badge fact">事实</span></h3>
+<ul>
+  <li>模型：<code>assets[显示名].versions[] = {path, createdAt, status, subtitle?, viewport?, section?}</code>；status ∈ <code>needs-review</code>（默认）/ <code>approved</code> / <code>changes-requested</code>。</li>
+  <li>同 <code>path</code> 再记录 = <b>原地更新</b>（保留 createdAt）；新 path = 追加新版本；<code>--inherit-from</code> 把新文件归到已有资产名下。</li>
+  <li>读取 <code>_d_meta.json</code> 是重开项目的入口：有 <code>designSystems</code> 就恢复绑定、不再重问。</li>
+  <li><span class="badge infer">推断</span> 这套"版本 + 审阅状态"的模型对应宿主产品的资产审查面板；本地用 CLI 复刻，保证无宿主时流程完整。</li>
+</ul>
+
+<h3>5.5 HTTP 预览纪律与验证闭环 <span class="badge fact">事实</span></h3>
+<ul>
+  <li>一切预览/截图/打开 → <code>http://localhost:4311/…</code>；单 server 服务整个 <code>designs/</code> 并复用。</li>
+  <li>交付 = "运行中的预览"：给 URL + 文件；修到"不炸"为止。<code>references/&lt;harness&gt;.md</code> 里有各环境的预览怪癖（React 18 onClick 委托对合成点击不响应、reload 后截图错位等）。</li>
+  <li>图像输入门控：Claude Code 场景先对 committed 的 <code>vision-probe.png</code> 跑一次性探测，只有子代理回精确 <code>VISION_OK</code> 才允许把截图读进模型；否则退文本/DOM 校验并明示"视觉审查被跳过"。</li>
+</ul>
+
+<h3>5.6 直接可编辑性（作者面向产物的约束） <span class="badge fact">事实</span></h3>
+<ul>
+  <li>产物需"canonical HTML"：显式闭合、双引号属性、不自动闭合。</li>
+  <li>文本放叶子元素；重复结构写死，不用数组生成——为了让宿主的直接编辑（点选改字）能把修改 splice 回源码。</li>
+  <li><code>make-a-deck</code> 特别强调：静态 HTML 优先，React/脚本生成的 DOM 会破坏这条路径。</li>
+</ul>
+
+<h3>5.7 固定尺寸内容与 deck-stage <span class="badge fact">事实</span></h3>
+<ul>
+  <li>deck / 视频 / 打印文档等固定尺寸内容自实现缩放：1920×1080 画布 + letterbox + 控件在缩放元素外。</li>
+  <li>deck-stage 组件还提供：缩略图 rail（可拖宽、多选、重排、Skip、Delete）、打印每页一张纸、<code>noscale</code>（供导出器抓 1:1 几何）、<code>dc-op</code> 协议（结构性变更交给宿主，未确认前锁输入）。</li>
+  <li><code>data-anim</code> 是 deck 与 PPTX 导出器之间的共享契约：组件负责浏览器内播放（WAAPI），gen-pptx 负责翻译成原生动画。</li>
+</ul>
+
+<h3>5.8 上游同步机制 <span class="badge fact">事实</span></h3>
+<ul>
+  <li>上游 = claude.ai/design 的反混淆 bundle；<code>references/upstream-sync/</code> 记录 sha256 溯源、提取 profile、原始 JSON 快照。</li>
+  <li>同步动作有两类：<b>copy</b>（直接覆盖）与 <b>preserve-for-merge</b>（本地有改动的文件跳过覆盖，稍后手工合并）。受保护清单：9 个 skill + 2 个 starter。</li>
+  <li>测试套件含"防回归 marker 断言"：如 deck-stage 必须含 <code>_animOnNav</code>、<code>tweaks-panel</code> 必须含 <code>TweakSuggestionBar</code>、design-canvas 必须含 1.1× 缩放实现——一次粗暴的上游同步会被 CI 直接拦下。</li>
+</ul>
+</section>
+
+<!-- ============================================================= -->
+<section id="s6">
+<h2>六、模块/能力地图</h2>
+
+<h3>6.1 模块一览 <span class="badge fact">事实</span></h3>
+<table>
+<tr><th>模块</th><th>规模</th><th>职责</th><th>关键事实</th></tr>
+<tr><td><code>SKILL.md</code></td><td>61 行</td><td>编排</td><td>5 步入口；分层职责声明</td></tr>
+<tr><td><code>system-prompt.md</code></td><td>323 行</td><td>方法论/craft</td><td>harness 无关；13 类路由表；反 AI 味清单</td></tr>
+<tr><td><code>references/</code></td><td>3×~100 行 + 快照</td><td>harness 适配 + 溯源</td><td>claude/cursor/codex 映射；上游 sha256 溯源</td></tr>
+<tr><td><code>built-in-skills/</code></td><td>~50 个，2696 行</td><td>专项提示词</td><td>薄至 5 行、厚至 200+ 行；按需加载</td></tr>
+<tr><td><code>starter-components/</code></td><td>27 个，~21481 行</td><td>脚手架</td><td>无构建；舞台类 Shadow DOM / 外壳类 light DOM</td></tr>
+<tr><td><code>agents/gen-pptx/</code></td><td>TS CLI</td><td>deck→PPTX</td><td>Playwright + vendored PptxGenJS（2 处 patch）；动画→原生构建</td></tr>
+<tr><td><code>agents/gen-video/</code></td><td>TS CLI</td><td>动画→视频</td><td>桥 seek 逐帧 → ffmpeg；⚠ 与 v3 引擎桥协议错位</td></tr>
+<tr><td><code>agents/*design-system*.mjs</code></td><td>~1700 行</td><td>DS 创作/消费</td><td>ds-core 只读解析；compile 唯一写；checker 写零</td></tr>
+<tr><td><code>agents/import-figma.mjs</code></td><td>740 行 + vendor</td><td>.fig 离线导入</td><td>自带 schema 现场编译解码器；内联 ZSTD WASM</td></tr>
+<tr><td><code>agents/build-preview.mjs</code></td><td>1919 行</td><td>DS→preview.html</td><td>迷你打包器 + shadow 沙箱运行时</td></tr>
+<tr><td><code>agents/record-asset.mjs</code></td><td>187 行 + lib</td><td>资产索引</td><td>唯一写 <code>_d_meta.json</code> 的入口</td></tr>
+</table>
+
+<h3>6.2 能力矩阵（用户视角） <span class="badge fact">事实</span></h3>
+<div class="grid3">
+  <div class="card"><h4>设计产出</h4><ul class="small">
+    <li>Hi-fi 设计 / 交互原型 / 线框</li><li>落地页 / 仪表盘 / 移动 App</li>
+    <li>幻灯片 Deck / 演讲备注</li><li>文档 / 简历 / 报告</li>
+    <li>动画 / 3D 物体 / 水彩插画</li><li>HTML 邮件 / 图表 / 地图</li>
+    <li>传单 / 三折页 / 社交内容</li></ul></div>
+  <div class="card"><h4>导入源</h4><ul class="small">
+    <li>Figma <code>.fig</code>（离线解码）</li><li>GitHub 仓库（gh api 浏览 + 稀疏克隆）</li>
+    <li>现有 HTML/CSS（读代码不读截图）</li><li>设计系统/UI kit（跨项目复用）</li></ul></div>
+  <div class="card"><h4>导出/交付</h4><ul class="small">
+    <li>PPTX（可编辑 / 截图两模式）</li><li>视频 MP4/WebM/GIF</li>
+    <li>PDF / 单文件 HTML</li><li>Send to Figma / Canva</li>
+    <li>Handoff to Claude Code</li></ul></div>
+</div>
+</section>
+
+<!-- ============================================================= -->
+<section id="s7">
+<h2>七、本地工具链深潜</h2>
+<p class="lead">四个最值得理解的实现：它们回答"云端工具怎么移植到本地"这个核心命题。</p>
+
+<h3>7.1 gen-pptx：不解析 HTML，而是"真浏览器渲染 → PowerPoint 翻译" <span class="badge fact">事实</span></h3>
+<div class="fig">
+<svg viewBox="0 0 900 430" role="img" aria-label="gen-pptx 管线">
+ <style>
+  .b{fill:#fff;stroke:#e6e1d8;stroke-width:1.5;rx:8}
+  .bA{fill:#fdf1e7;stroke:#e8c3a4}
+  .t{font:600 13px -apple-system,"PingFang SC",sans-serif;fill:#1c1a17}
+  .s{font:11.5px -apple-system,"PingFang SC",sans-serif;fill:#6b655c}
+  .a{stroke:#c2571a;stroke-width:1.5;fill:none;marker-end:url(#arr3)}
+  .lane{font:600 13px -apple-system,"PingFang SC",sans-serif;fill:#8a8270}
+ </style>
+ <defs><marker id="arr3" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#c2571a"/></marker></defs>
+ <text class="lane" x="30" y="28">CLI（Node 侧）</text>
+ <text class="lane" x="500" y="28">浏览器内（in-page 捕获 bundle）</text>
+ <rect class="b" x="30" y="42" width="200" height="52"/><text class="t" x="46" y="64">cli.ts：参数/预检/超时</text><text class="s" x="46" y="82">--url（http 强制）--config --out</text>
+ <rect class="b" x="30" y="110" width="200" height="52"/><text class="t" x="46" y="132">driver：Playwright</text><text class="s" x="46" y="150">headless Chromium</text>
+ <rect class="b bA" x="30" y="178" width="200" height="66"/><text class="t" x="46" y="200">run.ts 编排</text><text class="s" x="46" y="218">editable：逐页 capture → 渲染</text><text class="s" x="46" y="234">screenshots：逐页截图</text>
+ <rect class="b" x="30" y="260" width="200" height="58"/><text class="t" x="46" y="282">render/* → PptxGenJS</text><text class="s" x="46" y="300">renderNodeToPptx + timing.ts</text>
+ <rect class="b" x="30" y="334" width="200" height="58"/><text class="t" x="46" y="356">validate + stdout JSON</text><text class="s" x="46" y="374">flags 全为 advisory</text>
+ <rect class="b" x="500" y="42" width="360" height="78"/><text class="t" x="516" y="64">setup()：一次预处理</text><text class="s" x="516" y="82">隐藏 chrome · 字体替换与探针 · 撤销 transform 缩放</text><text class="s" x="516" y="98">document.fonts.ready 竞速 · 收集演讲备注</text>
+ <rect class="b" x="500" y="138" width="360" height="110"/><text class="t" x="516" y="160">captureEditable()：DOM → JSON 树</text><text class="s" x="516" y="178">{tag, rect, style, children, text?, svg?, gradient?, anim?}</text><text class="s" x="516" y="194">Range.getBoundingClientRect() 取文本盒</text><text class="s" x="516" y="210">背景/边框/阴影/渐变/媒体全部序列化</text><text class="s" x="516" y="228">data-anim 属性随节点带走</text>
+ <rect class="b bA" x="500" y="266" width="360" height="90"/><text class="t" x="516" y="288">resolveMedia(refs)：媒体解析</text><text class="s" x="516" y="306">fetch→dataURL · SVG 光栅化 · 渐变→带 alpha PNG</text><text class="s" x="516" y="322">6 路并发池，跨全部 slide 一次性批量</text><text class="s" x="516" y="340">pptxgenjs 无渐变填充 → 保透明度的唯一解</text>
+ <line class="a" x1="130" y1="94" x2="130" y2="110"/>
+ <line class="a" x1="130" y1="162" x2="130" y2="178"/>
+ <line class="a" x1="130" y1="244" x2="130" y2="260"/>
+ <line class="a" x1="130" y1="318" x2="130" y2="334"/>
+ <line class="a" x1="230" y1="211" x2="500" y2="80" stroke-dasharray="4 3"/>
+ <line class="a" x1="230" y1="226" x2="500" y2="190" stroke-dasharray="4 3"/>
+ <line class="a" x1="500" y1="310" x2="230" y2="285" stroke-dasharray="4 3"/>
+ <text class="s" x="238" y="88">注入 capture.iife.js → window.__genpptx</text>
+ <text class="s" x="238" y="188">page.evaluate（JSON 通信，硬超时）</text>
+</svg>
+<figcaption>图 3 · gen-pptx 两阶段管线（事实：inject.ts:19-35；setup.ts:21-298；capture-editable.ts:121-342；render-node.ts:46-533；timing.ts:198-584）</figcaption>
+</div>
+<ul>
+  <li><b>单位换算</b>：<code>px ÷ 96 = inch</code>，<code>px × 0.75 = pt</code>；文本宽度额外补 3%（最少 8px）、高度 +4px 防换行漂移。</li>
+  <li><b>动画</b>：<code>data-anim</code> → 每个形状绑 spid（依赖 vendored 库的 <code>cNvPr/@id = idx+2</code> 契约）→ 生成 <code>&lt;p:timing&gt;</code> XML 写进 slide XML；复合滤镜效果只在主形状播、其余退化为 fade（避免 PowerPoint 按形状各自播种子打架）。</li>
+  <li><b>为什么 vendor 源码</b>：PptxGenJS 没有动画 API；patch 只有两处——把算好的 timing 字符串拼进 slide XML + 声明 <code>_timingXml</code> 字段。升级流程=换源码→重放 patch→跑测试（测试真跑 <code>pptx.write()</code> 解包断言契约）。</li>
+</ul>
+
+<h3>7.2 gen-video：桥 seek 逐帧 → ffmpeg <span class="badge fact">事实</span> <span class="badge warn">注意·版本错位</span></h3>
+<ul>
+  <li>管线：等桥（8s 内每 50ms 轮询）→ 暂停播放 → 帧循环（<code>bridge.setTime(秒)</code> + 双 rAF 沉降 → 整视口 PNG）→ 帧流写入 <code>ffmpeg -f image2pipe</code>（mp4=libx264 / webm=vp9 / gif=palettegen+paletteuse）。</li>
+  <li>超采样：DPR=2 截图，降采样交给 ffmpeg lanczos；帧时刻 <code>(startMs + i*1000/fps)/1000</code>。</li>
+  <li>验证 4 flag 全为 advisory：<code>zero_duration</code> / <code>fonts_timeout</code> / <code>capture_mode_off</code> / <code>duplicate_frames</code>（阈值放宽到 85%，因为"讲解型动画每拍停几秒"是正常的）。</li>
+  <li class="warn"><b>⚠ 已知错位</b>：CLI 只认 <code>window.__animStage.setTime</code>（默认桥名），而 <code>__animStage</code> 只在 v1 <code>animations.jsx</code> 存在；当前主力引擎 v3 的导出契约是 DOM 事件 <code>data-om-seek-to-time-frame</code>，CLI 不派发该事件。文档（<code>export-as-video.md</code>）又按 v1 零配置描述。→ 用 v3 新做的动画本地导出为视频目前没有文档化路径。</li>
+</ul>
+
+<h3>7.3 设计系统流水线（四脚本 + 一指南） <span class="badge fact">事实</span></h3>
+<ul>
+  <li><code>ds-core.mjs</code>（只读解析器）：算 <code>@import</code> 后序闭包、抽 <code>--*</code> token（带幻影匹配防护）、正则级解析 <code>.d.ts</code> props（fail-open）、收集 issues。零写入是刻意的——checker 可作为只读子代理运行。</li>
+  <li><code>compile-design-system.mjs</code>（唯一写步骤）：Node 内跑 vendored Babel（preset react，自定义插件删 export/重写相对导入）；按依赖图 DFS 后序打 bundle；单文件转译失败降级为 <code>__errors</code> 条目而非整体失败。</li>
+  <li><code>check-design-system.mjs</code>：输出 summary + issues；测试证明"写零"；无 CSS 入口 exit 2。</li>
+  <li><code>import-design-system.mjs</code>：见 §5.3；生成 <code>_ds_prompt.md</code> 是它的隐藏主角。</li>
+  <li><code>build-preview.mjs</code>：把 DS 编成单文件 <code>preview.html</code>——构建期做"CSS 作用域化（<code>:root→:host</code>、@font-face 提升）/ JS 转译 / 资源内联（含 JSX 字符串引用与运行时 fetch 代理）/ djb2 CSS 去重"；运行期用声明式 Shadow DOM + 每卡 <code>document/window</code> Proxy 沙箱 + 自适应缩放安全渲染。</li>
+</ul>
+
+<h3>7.4 Figma 离线解码 <span class="badge fact">事实</span></h3>
+<ul>
+  <li><code>.fig</code> = ZIP（内取 <code>canvas.fig</code>）或裸 kiwi 容器；canvas 头 <code>fig-kiwi</code> + chunk 序列；chunk[0]=schema、chunk[1]=data。</li>
+  <li>压缩：zstd（内联 base64 WASM 解码）或 deflate；schema 用 <code>new Function</code> <b>现场编译成解码器</b>再解 data——这是"完全离线"的关键，不需要 Figma 的任何服务。</li>
+  <li>子命令：<code>outline</code>（盘点）→ <code>mount</code>（参考树）→ <code>materialize</code>（发射组件 JSX）/ <code>render</code>（视觉基准 HTML）→ <code>design-system</code>（原料→走 §7.3 策展流水线）。</li>
+  <li>资产：位图落 <code>assets/</code>（4MiB/张、16MiB 总预算）；小矢量内联 SVG、大矢量独立 .svg；字体权重按样式名解码成 100–900，但 <code>.fig</code> 不含字体二进制（提示自备 @font-face）。</li>
+</ul>
+</section>
+
+<!-- ============================================================= -->
+<section id="s8">
+<h2>八、工程化与测试 <span class="badge fact">事实</span></h2>
+<ul>
+  <li><b>零依赖测试</b>：<code>node --test</code> 跑 <code>agents/tests/*.test.mjs</code>（Node 22 内建 runner）；CI 在 Ubuntu + Node 22 上只做这一件事。</li>
+  <li><b>三类测试</b>：
+    <ol>
+      <li>纯函数/CLI 契约测试（asset-store、record-asset、ds-core 等）；</li>
+      <li>真实子进程冒烟（compile→manifest→bundle 可 <code>new Function</code> 执行；import-figma 真解 <code>minimal.fig</code>）；</li>
+      <li><b>文档一致性守卫</b>（project-types.test：13 类路由三处对齐 + 上游同步防回归 marker；vision-probe-docs.test：把"AI 能力门控"写进断言）。</li>
+    </ol></li>
+  <li><b>两个导出 CLI 各有独立测试</b>（gen-pptx：vendored 库契约真跑 <code>pptx.write()</code> 解包 + timing XML 结构化断言；gen-video：ffmpeg 参数 + validate 边界），但<b>不在根 CI 里</b>——需目录内单独跑（避免 Chromium 依赖进 CI）。</li>
+  <li><b>发布</b>：<code>.claude/skills/release-skills/</code>（本仓库自用）：自动探测版本文件/多语言 changelog → conventional commits 分析 → 多语言条目 + 版本 bump + annotated tag + GitHub Release；历史 tags v1.0.0–v1.3.0。</li>
+</ul>
+<div class="callout"><p><span class="badge infer">推断</span> 测试重心与项目本质一致：<b>能测的测死（工具逻辑、文档一致性、上游同步护栏），测不了的（浏览器内渲染、提示词质量）靠人工验证 + 明确记录盲区</b>。</p></div>
+</section>
+
+<!-- ============================================================= -->
+<section id="s9">
+<h2>九、扩展点与常见陷阱</h2>
+
+<h3>9.1 如果你想扩展它 <span class="badge infer">推断（基于结构）</span></h3>
+<table>
+<tr><th>目标</th><th>操作</th><th>别忘了</th></tr>
+<tr><td>支持新 harness</td><td>写 <code>references/&lt;new&gt;.md</code>（工具映射 + 预览怪癖）+ 在 SKILL.md/system-prompt.md 识别行加一条</td><td>方法论不用改；映射至少覆盖"问用户/呈现/截图/验证"四能力</td></tr>
+<tr><td>新增 built-in skill</td><td>加 <code>built-in-skills/&lt;name&gt;.md</code>（frontmatter name+description）</td><td>同时在 system-prompt.md 清单 + SKILL.md 路由挂上；若属 13 类之一要动 project-types.json（测试会查）</td></tr>
+<tr><td>新增 starter</td><td>加 <code>starter-components/&lt;file&gt;</code>，头部写 usage 注释</td><td>project-types.json 的对应类型 starters[]；若被 PPTX/视频导出依赖，注意与导出器的契约（如 <code>noscale</code>、时间线桥）</td></tr>
+<tr><td>新增导出格式</td><td>仿 gen-pptx 结构：CLI 壳 + orchestrator + 纯函数 core + 测试</td><td>stdout 单行 JSON + 退出码 0/64/1 的约定；flags 命名与文档同步；导入式而非全局依赖（Playwright 动态 import 以便友好预检）</td></tr>
+<tr><td>上游同步</td><td>重跑提取/同步（工具不在本仓库）</td><td>受保护清单；同步后跑测试套件（marker 断言会抓回归）；必要时重放 deck-stage/design-canvas patch</td></tr>
+</table>
+
+<h3>9.2 常见陷阱（均已见证据）</h3>
+<div class="grid2">
+<div class="card"><h4>用 file:// 预览</h4><p class="small">多文件 Babel 原型会静默失败（跨源脚本读取被拦）。永远 HTTP + 4311。<span class="badge fact">事实</span></p></div>
+<div class="card"><h4>Babel 顶层全局名撞车</h4><p class="small">text/babel 块被注入为 classic script，<code>const status = …</code> 会写 <code>window.status</code> 并静默炸掉页面。禁用清单（status/name/open/location…）写进了 <code>_ds_prompt.md</code>。<span class="badge fact">事实</span></p></div>
+<div class="card"><h4>全局 style 对象重名</h4><p class="small">多个 Babel 文件各自作用域，<code>const styles = {}</code> 会互相覆盖；必须带组件名前缀或用 CSS 变量。<span class="badge fact">事实</span></p></div>
+<div class="card"><h4>deck 幻灯片 wrapper 坍缩</h4><p class="small">deck-stage 只拉伸 section，不拉伸内部 wrapper；全绝对定位的 wrapper 高度为 0 → 全出血图消失/半屏。加 <code>section[data-label] &gt; *</code> 的 height:100% 基础规则。<span class="badge fact">事实</span></p></div>
+<div class="card"><h4>token 名靠猜</h4><p class="small">未解析的 <code>var(--x)</code> 静默回退浏览器默认值——所以 <code>_ds_prompt.md</code> 内置精确白名单，只许用列表内的名字。<span class="badge fact">事实</span></p></div>
+<div class="card"><h4>v3 动画导出视频</h4><p class="small">见 §7.2 警示：本地 gen-video 与当前引擎的桥协议错位，导出前先确认桥或改用 v1 兼容引擎。<span class="badge warn">注意</span></p></div>
+<div class="card"><h4>把 repo 当"代码"阅读</h4><p class="small">本仓库的"源代码"一半是提示词（影响的是模型行为而非运行时）。改提示词要同时考虑三处路由与测试 marker。<span class="badge infer">推断</span></p></div>
+<div class="card"><h4>assets/ 与 vendor/ 的区别</h4><p class="small">根 <code>assets/</code> 只服务 README；运行时离线依赖在 <code>agents/vendor/</code>（React/Babel/fflate/fig-materialize）。别搞混。<span class="badge fact">事实</span></p></div>
+</div>
+</section>
+
+<!-- ============================================================= -->
+<section id="s10">
+<h2>十、关键文件索引 <span class="badge fact">事实</span></h2>
+<p>从零上手的最短路径（按序读）：</p>
+<table>
+<tr><th>#</th><th>文件</th><th>为什么读它</th></tr>
+<tr><td>1</td><td><code>skills/baoyu-design/SKILL.md</code></td><td>61 行看懂整个编排——全项目的目录页。</td></tr>
+<tr><td>2</td><td><code>skills/baoyu-design/system-prompt.md</code></td><td>设计方法论主体；所有 craft 规则的来源。</td></tr>
+<tr><td>3</td><td><code>skills/baoyu-design/built-in-skills/make-a-deck.md</code></td><td>单个"厚"技能的全貌：领域知识 + 导出契约 + 编辑性约束。</td></tr>
+<tr><td>4</td><td><code>skills/baoyu-design/starter-components/deck-stage.js</code></td><td>头部 100 行注释＝一个脚手架的完整设计文档范式。</td></tr>
+<tr><td>5</td><td><code>skills/baoyu-design/agents/import-design-system.mjs</code> + <code>lib/ds-prompt.mjs</code></td><td>理解"binding 契约"如何生成——设计系统机制的核心。</td></tr>
+<tr><td>6</td><td><code>skills/baoyu-design/agents/gen-pptx/src/orchestrator/run.ts</code></td><td>gen-pptx 的编排骨架；配合 <code>browser/capture-editable.ts</code> 与 <code>render/render-node.ts</code>。</td></tr>
+<tr><td>7</td><td><code>skills/baoyu-design/references/upstream-sync/provenance.json</code> + <code>apply-report.json</code></td><td>理解"这个仓库从哪来、怎么同步"。</td></tr>
+<tr><td>8</td><td><code>skills/baoyu-design/agents/tests/project-types.test.mjs</code></td><td>看清"文档一致性 + 上游防回归"的守卫方式（也是最好的本地约定说明书）。</td></tr>
+</table>
+<p class="small">其他高频位置：预览/资产约定 <code>built-in-skills/use-design-system.md</code>；PPTX 输入 JSON <code>built-in-skills/export-as-pptx-editable.md</code>；视频流程 <code>built-in-skills/export-as-video.md</code>（注意 §7.2 的错位）；CI <code>.github/workflows/tests.yml</code>。</p>
+</section>
+
+<!-- ============================================================= -->
+<section id="s11">
+<h2>十一、未解问题摘要 <span class="badge unknown">完整清单见 notes 目录 questions.md</span></h2>
+<ol>
+  <li><b>⚠ 动画导出协议错位</b>（v3 引擎的事件契约 vs gen-video 的桥契约）——本地导出 v3 动画的正确路径未文档化。</li>
+  <li><b>上游提取工具链不在仓库</b>——只知产出物与溯源 JSON；同步触发器/频率未知。</li>
+  <li><b><code>npx skills</code> 安装器的精确约定</b>——如何枚举 skill 目录、对本仓库布局有无隐性约束。</li>
+  <li>gen-pptx 的浏览器侧主体（DOM 遍历/字体/媒体/渲染）无自动测试——真实回归风险集中区。</li>
+  <li>两个导出 CLI 不在根 CI 覆盖内。</li>
+  <li>受保护清单（11 个文件）中多数文件的"本地上改"未逐条 diff 核对。</li>
+  <li>宿主产品里被开关裁掉的能力（如 .dc.html Design Components）与本仓库的关系未核实。</li>
+  <li>音频契约（<code>data-om-exportable-video-play-*</code>、VideoSprite）在本地工具链无消费者。</li>
+</ol>
+</section>
+
+</main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <p><b>调研方法与标注说明</b>：本文基于对仓库 HEAD <code>6530033</code>（v1.3.0）的只读分析——文件通读、目标化 grep、git 历史、4 个并行深度探索任务，全部结论附 <code>文件:行</code> 级出处（见同目录 <code>sources.md</code>）。<span class="badge fact">事实</span> 可直接验证；<span class="badge infer">推断</span> 为合理推导；<span class="badge unknown">未知</span> 明确不猜测。配套笔记：<code>overview.md</code>（速览）/ <code>architecture.md</code>（主流程）/ <code>notes/</code>（9 份模块深潜）/ <code>questions.md</code>（未解清单）/ <code>sources.md</code>（证据检索表）。</p>
+    <p>baoyu-design 由 Jim Liu 宝玉 重打包维护（MIT）；原始设计方法论版权归 Anthropic（claude.ai/design）。本页为独立调研文档，与上述二者无隶属关系。</p>
+  </div>
+</footer>
+
+</body>
+</html>

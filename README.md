@@ -2,6 +2,8 @@
 
 代码库深度分析笔记：用 AI agent 对开源项目做「从零到能改代码」的架构全解，全程只读分析，产出中文笔记与自包含 HTML 文档。
 
+**在线浏览**：<https://argsno.github.io/codemaps/> — 三份「架构全解」HTML 可直接在浏览器打开。
+
 ## 收录
 
 ### [context-mode](./context-mode/) — mksglu/context-mode `v1.0.169` @ `dbec980`
@@ -11,6 +13,10 @@ MCP 服务器 + 多平台客户端插件，目标是节省 AI 编码代理的 co
 ### [rea](./rea/) — morluto/rea @ `b11fe63bf`
 
 「Reverse Engineer Anything」：本地运行的逆向工程工具，以 MCP server + CLI 双形态暴露同一套分析工作流，产出带证据（Evidence）与不确定性（Unknown）的结论。
+
+### [baoyu-design](./baoyu-design/) — 宝玉（Jim Liu）· `v1.3.0` @ `6530033`
+
+把 Claude Design 重新打包成「可移植 Agent Skill」：本地编码 agent 在编辑器里直接产出自我包含的 HTML 设计产物（mockup、原型、幻灯片、视频等）。
 
 ## 每个项目的结构
 
