@@ -2,7 +2,7 @@
 
 代码库深度分析笔记：用 AI agent 对开源项目做「从零到能改代码」的架构全解，全程只读分析，产出中文笔记与自包含 HTML 文档。
 
-**在线浏览**：<https://argsno.github.io/codemaps/> — 三份「架构全解」HTML 可直接在浏览器打开。
+**在线浏览**：<https://argsno.github.io/codemaps/> — 四份「架构全解」HTML 可直接在浏览器打开。
 
 ## 收录
 
@@ -17,6 +17,10 @@ MCP 服务器 + 多平台客户端插件，目标是节省 AI 编码代理的 co
 ### [baoyu-design](./baoyu-design/) — 宝玉（Jim Liu）· `v1.3.0` @ `6530033`
 
 把 Claude Design 重新打包成「可移植 Agent Skill」：本地编码 agent 在编辑器里直接产出自我包含的 HTML 设计产物（mockup、原型、幻灯片、视频等）。
+
+### [sqlite](./sqlite/) — sqlite `v3.55.0` @ `4226522153`（FTS5）
+
+SQLite FTS5 全文检索模块：LSM 式倒排索引，覆盖段/页格式、MATCH 求值、分词器、虚表事务与排序。
 
 ## 每个项目的结构
 

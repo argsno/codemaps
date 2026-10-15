@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SQLite FTS5 核心架构全解 — 从零到能改代码</title>
+<style>
+:root{--bg:#fafafa;--card:#fff;--ink:#1a1a1a;--muted:#666;--line:#e5e5e5;--fact:#137333;--factbg:#e6f4ea;--inf:#b06000;--infbg:#fef7e0;--unk:#9334e6;--unkbg:#f3e8fd;--accent:#0b57d0;--code:#f6f8fa}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.7 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:1020px;margin:0 auto;padding:24px 20px 80px}
+header.hero{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:28px;margin-bottom:20px}
+h1{font-size:26px;margin:0 0 8px}h2{font-size:21px;margin:36px 0 12px;padding-top:12px;border-top:2px solid var(--line)}h3{font-size:17px;margin:22px 0 8px;color:#222}h4{font-size:15px;margin:16px 0 6px}
+.sub{color:var(--muted)}.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:12px 0}
+.badge{display:inline-block;font-size:12px;font-weight:700;border-radius:20px;padding:1px 9px;margin-right:6px;vertical-align:middle}
+.fact{background:var(--factbg);color:var(--fact);border:1px solid #b7dbbb}.inf{background:var(--infbg);color:var(--inf);border:1px solid #f0d48a}.unk{background:var(--unkbg);color:var(--unk);border:1px solid #d7b8f5}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;background:var(--code);border:1px solid #eee;border-radius:6px;padding:1px 6px}
+pre{background:#0f172a;color:#e2e8f0;border-radius:10px;padding:14px 16px;overflow:auto;font-size:12.5px;line-height:1.6}
+pre b{color:#7dd3fc}table{width:100%;border-collapse:collapse;font-size:13.5px;margin:10px 0}th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}th{background:#f1f3f4}
+.toc columns,.toc{columns:2}.toc a{color:var(--accent);text-decoration:none;font-size:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:760px){.grid2{grid-template-columns:1fr}.toc{columns:1}}
+.flow{display:flex;align-items:stretch;gap:0;margin:10px 0;flex-wrap:wrap}.step{background:#e8f0fe;border:1px solid #c2d7fe;border-radius:8px;padding:8px 10px;font-size:13px;flex:1;min-width:130px}.arrow{align-self:center;padding:0 6px;color:var(--accent);font-weight:700}
+.kv{font-size:13px;color:var(--muted)}.src{font-size:12px;color:#888}
+.note{border-left:4px solid var(--accent);background:#eef4ff;padding:10px 14px;border-radius:0 8px 8px 0;margin:10px 0;font-size:14px}
+.warn{border-left:4px solid #d93025;background:#fce8e6;padding:10px 14px;border-radius:0 8px 8px 0;margin:10px 0;font-size:14px}
+svg.diag{width:100%;height:auto;background:#fff;border:1px solid var(--line);border-radius:10px}
+footer{color:var(--muted);font-size:13px;margin-top:40px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="hero">
+<h1>SQLite FTS5 核心架构全解</h1>
+<div class="sub">目标仓库 <code>/Users/argsno/Projects/sqlite</code>（VERSION 3.55.0，主干 <code>4226522153</code>，分析日期 2026-10-15，全程只读）· 聚焦 <code>ext/fts5/</code> 约 2.9 万行 C 代码<br>
+标注三分法：<span class="badge fact">事实</span>可直接核对（附 文件:行/命令）· <span class="badge inf">推断</span>由实现推导 · <span class="badge unk">未知</span>未查证留白。读者：没接触过该项目的人 → 读完能动手改代码。</div>
+<div class="toc card"><b>目录</b><br>
+<a href="#s1">1 定位与名词表</a> · <a href="#s2">2 如何运行</a> · <a href="#s3">3 分层与依赖方向</a> · <a href="#s4">4 主流程时序</a> · <a href="#s5">5 核心机制拆解</a> · <a href="#s6">6 模块/能力地图</a> · <a href="#s7">7 工程化与测试</a> · <a href="#s8">8 扩展点与常见陷阱</a> · <a href="#s9">9 关键文件索引</a> · <a href="#s10">10 未解问题摘要</a></div>
+</header>
+
+<h2 id="s1">1. 定位与名词表</h2>
+<div class="card"><b>一句话定位：</b>FTS5 是 SQLite 内置的全文检索虚表模块，一套 LSM 风格的倒排索引工业实现：写进内存哈希、提交时 flush 成不可变段、后台分层合并，读做多段归并。<span class="badge fact">事实</span><span class="src">ext/fts5/fts5_index.c:22-43 设计自述；影子表清单 fts5_main.c:3713-3722</span></div>
+<table><tr><th>术语</th><th>含义</th><th>出处</th></tr>
+<tr><td>虚表</td><td>用 xCreate/xBestIndex/xFilter/xUpdate 等回调对外表现成表的东西，解析/规划/事务由 SQLite 提供</td><td><span class="badge fact">事实</span> fts5_main.c:3763-3790</td></tr>
+<tr><td>影子表</td><td>虚表背后真实的普通表：<code>t_data/t_idx/t_content/t_docsize/t_config</code></td><td><span class="badge fact">事实</span> fts5_main.c:3713-3722</td></tr>
+<tr><td>term</td><td>分词器切出的最小搜索单位，内部带 1 字节编号：<code>'0'</code>=主索引，<code>'1'..</code>=前缀索引</td><td><span class="badge fact">事实</span> fts5_index.c:51,7017-7031</td></tr>
+<tr><td>segment 段</td><td>一次 flush 产出的不可变倒排数据块，16-bit segid，无 interior 页，就是一条叶子链</td><td><span class="badge fact">事实</span> fts5_index.c:407-418</td></tr>
+<tr><td>page 页</td><td>段内读写单位，默认约 4KB，对应 t_data 一行 blob</td><td><span class="badge fact">事实</span> fts5_config.c:19 pgsz=4050</td></tr>
+<tr><td>doclist / poslist</td><td>含某词的行号列表（delta 压缩）/ 位置表（列号+词序号，列号&lt;&lt;32|偏移）</td><td><span class="badge fact">事实</span> fts5_index.c:144-151；fts5Int.h:364-365</td></tr>
+<tr><td>split key / 界标</td><td>t_idx 的 term 列：每页起始下界（公共前缀+1 字节压缩），首行空串</td><td><span class="badge fact">事实</span> fts5_index.c:4516-4539</td></tr>
+<tr><td>structure record</td><td>t_data id=10：段目录 + 增量合并状态 + 写计数器，不是 per-term 摘要</td><td><span class="badge fact">事实</span> fts5_index.c:88-118</td></tr>
+<tr><td>dlidx</td><td>跨多页大 doclist 的页内跳表，自己也是一棵小 b-tree</td><td><span class="badge fact">事实</span> fts5_index.c:205-232</td></tr>
+<tr><td>tombstone</td><td>仅 contentless_delete=1：被删 rowid 的哈希页，查询跳过、合并时真删</td><td><span class="badge fact">事实</span> fts5_index.c:234-266</td></tr>
+</table>
+
+<h2 id="s2">2. 如何运行</h2>
+<div class="grid2">
+<div class="card"><h4>构建与测试（官方命令原文）</h4><pre>./configure --dev
+make sqlite3            # 命令行 shell
+make sqlite3.c          # amalgamation
+make testfixture        # 测试解释器
+make tclextension-install
+./testfixture test/main.test
+test/testrunner.tcl fts5%  # 只跑 FTS5（148 个 .test）
+make devtest</pre><div class="kv"><span class="badge fact">事实</span> AGENTS.md Build/Testing 节；FTS5 开关 SQLITE_ENABLE_FTS5 main.mk:964，源清单 FTS5_SRC main.mk:1758-1773，Lemon 生成 fts5parse.c/h main.mk:1775-1780</div></div>
+<div class="card"><h4>三分钟上手（sqlite3 实测可跑）</h4><pre>CREATE VIRTUAL TABLE docs USING fts5(title, body);
+INSERT INTO docs VALUES('Doc one','sqlite full-text search');
+SELECT rowid FROM docs WHERE docs MATCH 'sqlite';
+SELECT highlight(docs,1,'[',']') FROM docs WHERE docs MATCH 'sqlite';
+INSERT INTO docs(docs) VALUES('optimize');
+SELECT * FROM docs_idx LIMIT 3;  -- 注意 term 是 BLOB</pre><div class="kv"><span class="badge fact">事实</span> 仓库 FTS5-入门与原理.md §2/§3 全部 sqlite3 实测；term BLOB 比较要用 CAST(.. AS BLOB)</div></div>
+</div>
+
+<h2 id="s3">3. 分层与依赖方向</h2>
+<svg class="diag" viewBox="0 0 960 360" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="13">
+<rect x="120" y="10" width="720" height="70" rx="10" fill="#e8f0fe" stroke="#0b57d0"/><text x="480" y="34" text-anchor="middle" font-weight="bold">① SQL 集成层 fts5_main.c（3904行）虚表回调 + 事务 + special 命令 + 扩展分发</text><text x="480" y="54" text-anchor="middle" fill="#555">xCreate/xBestIndex/xFilter/xUpdate/xSync/xSavepoint/xRename/xShadowName…</text>
+<rect x="40" y="110" width="420" height="90" rx="10" fill="#fef7e0" stroke="#b06000"/><text x="250" y="134" text-anchor="middle" font-weight="bold">② 存储层 fts5_storage.c（1549行）</text><text x="250" y="154" text-anchor="middle" fill="#555">%_content/%_docsize/%_config CRUD</text><text x="250" y="172" text-anchor="middle" fill="#555">external content / contentless / totals</text>
+<rect x="500" y="110" width="420" height="90" rx="10" fill="#fef7e0" stroke="#b06000"/><text x="710" y="134" text-anchor="middle" font-weight="bold">④ 查询表达式层 fts5_expr.c（3286行）</text><text x="710" y="154" text-anchor="middle" fill="#555">MATCH 串 → Fts5Expr 树 → 拉取式迭代器</text><text x="710" y="172" text-anchor="middle" fill="#555">短语/NEAR/AND/OR/NOT</text>
+<rect x="120" y="225" width="720" height="60" rx="10" fill="#e6f4ea" stroke="#137333"/><text x="480" y="248" text-anchor="middle" font-weight="bold">③ 索引层 fts5_index.c（9590行）pending hash → flush 成段 → 分层 merge → %_data 页</text><text x="480" y="268" text-anchor="middle" fill="#555">多段归并游标 Fts5Iter · 前缀索引 · dlidx · tombstone · 结构缓存</text>
+<rect x="120" y="300" width="720" height="40" rx="10" fill="#f1f3f4" stroke="#999"/><text x="480" y="325" text-anchor="middle">⑤ 影子表 t_data / t_idx / t_content / t_docsize / t_config</text>
+<line x1="300" y1="80" x2="300" y2="110" stroke="#0b57d0" stroke-width="2"/><line x1="660" y1="80" x2="660" y2="110" stroke="#0b57d0" stroke-width="2"/><line x1="250" y1="200" x2="250" y2="225" stroke="#b06000" stroke-width="2"/><line x1="710" y1="200" x2="710" y2="225" stroke="#b06000" stroke-width="2"/>
+<text x="975" y="180" font-size="11" fill="#666"></text>
+</svg>
+<div class="card"><span class="badge fact">事实</span> 依赖方向 <code>main → storage → index</code>（写/事务）与 <code>main → expr → index</code>（查询）；index 不认识 expr/main。如 storage.c:1069 调 index.c:6812。<br><span class="badge fact">事实</span> <code>fts5_config.c</code> 是共享底座，Fts5Config 被四层引用（fts5Int.h:228-272）。横切：tokenize + unicode2（读写共用）、varint/buffer 基元；附加 aux（bm25/highlight/snippet）、vocab。<br><span class="badge inf">推断</span> 切分意图：把最难变、性能最敏感的“格式与合并”与最善变的 SQL 语义隔开。</div>
+
+<h2 id="s4">4. 主流程时序（入口 → 结果，对应源码位置）</h2>
+<h3>4.1 建表 CREATE VIRTUAL TABLE</h3>
+<div class="flow"><div class="step">xCreate<br><b>main.c:477</b></div><div class="arrow">→</div><div class="step">ConfigParse<br><b>config.c:565</b> 10 选项</div><div class="arrow">→</div><div class="step">IndexOpen<br><b>index.c:6889</b> 建 data/idx + structure+averages</div><div class="arrow">→</div><div class="step">StorageOpen<br><b>storage.c:343</b> 按模式取舍表</div><div class="arrow">→</div><div class="step">DeclareVtab + ConfigLoad<br><b>config.c:755,1051</b></div></div>
+<h3>4.2 写入 INSERT / UPDATE / DELETE</h3>
+<div class="flow"><div class="step">xUpdate<br><b>main.c:1941</b></div><div class="arrow">→</div><div class="step">ContentInsert 写原文<br><b>storage.c:988</b></div><div class="arrow">→</div><div class="step">IndexInsert: BeginWrite + 按列 tokenize(DOCUMENT)<br><b>storage.c:1069,1115 → index.c:6812,7004 → hash.c:245</b> 只进内存 hash</div><div class="arrow">→</div><div class="step">xSync 落盘<br><b>main.c:2117 → 3156 → index.c:6839 → 5836</b> flush+automerge+crisismerge+structureWrite</div></div>
+<div class="note"><span class="badge fact">事实</span> 事务内所有写只进内存 hash，可能失败的落盘全放在 xSync，因为 SQLite 忽略 xCommit 错误（main.c:48-50）。xCommit 是空操作（main.c:2143），xRollback 丢 hash（index.c:6852）。</div>
+<h3>4.3 查询 SELECT … MATCH</h3>
+<div class="flow"><div class="step">xBestIndex 认领 MATCH<br><b>main.c:614</b> 编码 idxStr</div><div class="arrow">→</div><div class="step">xFilter 建树<br><b>expr.c:271</b> 词法+Lemon+分词</div><div class="arrow">→</div><div class="step">ExprFirst 初始化<br><b>expr.c:1552</b> 每 term IndexQuery → MultiIterNew <b>index.c:7422,3960</b></div><div class="arrow">→</div><div class="step">xNext 推进<br><b>main.c:991 → expr.c:1592</b> 短语对齐/NEAR 滑窗</div><div class="arrow">→</div><div class="step">xColumn 取原文/rank/highlight<br><b>main.c:3050</b></div></div>
+<h3>4.4 合并 merge / optimize</h3>
+<div class="card">触发：每次 hash flush 后（index.c:5827-5829）。<span class="badge fact">事实</span> automerge 按 <code>nWorkUnit(64)×nWork×nLevel</code> 预算增量合并（index.c:5043）；crisismerge 某层 ≥16 段强制下压（index.c:5064，默认 config.c:22）；用户 <code>INSERT INTO t(t) VALUES('merge',N)/('optimize')</code> → IndexMerge/IndexOptimize（index.c:5961/5925）。执行 fts5IndexMergeLevel（index.c:4812）：k 路归并 → 顺序写新段 → 删输入段 → 更新结构。level 0 最新最小，越大越老越大；最多 64 层（index.c:57）。</div>
+
+<h2 id="s5">5. 核心机制逐条拆解</h2>
+<h3>5.1 磁盘格式：t_data 的 6 类记录与 rowid 编码</h3>
+<div class="card"><span class="badge fact">事实</span> <code>t_data(id,block)</code>（index.c:6904-6912），记录清单 index.c:80-118；<code>t_idx(segid,term,pgno)</code> WITHOUT ROWID（index.c:6908-6911）。rowid 位域 <code>segid(16)|dli(1)|height(5)|pgno(31)</code>，AVERAGES=1、STRUCTURE=10、MAX_PGNO=0x7FFFFF00（index.c:269-304）。t_idx 的 pgno 存 <code>flag+(page&lt;&lt;1)</code>（写 index.c:4314，读 2734-2736）。段删除按 segid 整段清（index.c:1017-1040）。<br>页头 4B（首 rowid 偏移 + szLeaf），页脚 pgidx 为 term 偏移 delta-varint（index.c:171-204,621-625）。term 前缀压缩、每页首 term 全量、跨页首 rowid 绝对值（128-170,190-204,4483-4559）。无 free space，打包满即 flush；poslist 按 varint 边界切页（4498-4504,4599-4627）。</div>
+<h3>5.2 doclist / poslist / detail 三档</h3>
+<div class="card"><span class="badge fact">事实</span> doclist = 首 rowid 绝对值 + {delta,poslist}*（index.c:144-151）。位置值 <code>(col&lt;&lt;32)|offset</code>，跨列天然不相等（Int.h:364-365）。<br>full：collist + <code>0x01+列号</code>增量，offset +2 编码，尺寸 varint = 字节数*2+bDel（buffer.c:236-251, index.c:1873-1881）；columns：列号当位置（hash.c:370）；none：只有 rowid delta + 0/1/2 个 0x00（index.c:1898-1911）。枚举 FULL=0/NONE=1/COLUMNS=2（Int.h:285-287，解析 config.c:404-416）。删除写 nPos==0 标记，merge 时 annihilation（index.c:4873-4874）。</div>
+<h3>5.3 内存 hash 与 flush</h3>
+<div class="card"><span class="badge fact">事实</span> Fts5Hash 1024 槽、装载因子 2 扩容（hash.c:28-35,281-285），key = 索引号字节+term，value 为内存 doclist。结束 32 路归并排序顺序写段（hash.c:447-488）。flush 触发：rowid 回退/同 rowid 二写/pending&gt;1MiB（index.c:6812-6834，默认 config.c:23）。hash 同时当“伪段”参与查询归并，未提交立即可查（index.c:2873-2934）。<span class="badge inf">推断</span> 用 hash 而不用 b-tree：随机追加+周期整体输出，一次排序即顺序写段，避免页平衡写放大。</div>
+<h3>5.4 dlidx、t_idx、structure</h3>
+<div class="card"><span class="badge fact">事实</span> dlidx 只对跨 ≥4 续页的大 doclist 建（MIN_DLIDX_SIZE=4，index.c:49,4278-4289），自己是 b-tree（205-232），记录每页首 rowid，加速 seek 与大多合小多。t_idx 查询 <code>SELECT pgno … WHERE segid=? AND term&lt;=? ORDER BY term DESC LIMIT 1</code>（index.c:2691）。structure 在 rowid=10：nLevel/nSegment/nWriteCounter + 每层 nMerge/nSeg + 每段 segid/pgnoFirst/pgnoLast（V2 加 origin/tombstone 统计），带一致性校验（1429-1479,1125-1228），缓存靠 PRAGMA data_version 判失效（1316-1334）。</div>
+<h3>5.5 前缀索引 prefix=</h3>
+<div class="card"><span class="badge fact">事实</span> 上限 31 个、长度 1..999（config.c:271-291）。同一段内 key 首字节分区：'0' 主、'1'.. 第 i 个前缀（index.c:51,7017-7031）。长度按字符数换字节（6955-6976）。查询三路（7452-7503）：恰等长前缀索引直取；+1 长索引+主索引归并；否则主索引 16 路级联（MERGE_NLIST=16，6196）。调试开关 FTS5INDEX_QUERY_TEST_NOIDX 强制第三路（Int.h:439）。</div>
+<h3>5.6 tombstone（contentless_delete=1 才有）</h3>
+<div class="card"><span class="badge fact">事实</span> 删除把 rowid 写进覆盖它的段的墓碑哈希页（IndexContentlessDelete index.c:8166，区间判定 8176-8182）。页格式 8B 头 + 槽位 <code>iPg=rowid%nHashPg, iSlot=(rowid/nHashPg)%nSlot</code>（234-266,7873+）。归并时跳过（3426-3431），按占比 ≥deletemerge（默认 10%，config.c:25）触发 delete merge 真清（4948-4980）。<span class="badge unk">未知</span> 查询侧函数名行号有两说未逐一复核，见 §10。</div>
+<h3>5.7 查询求值：MATCH 语法与 lazy 迭代器</h3>
+<div class="card"><span class="badge fact">事实</span> 词法 expr.c:204-266（仅 OR/NOT/AND 保留字，bareword 表 buffer.c:313-330）；优先级 OR&lt;AND&lt;NOT&lt;TERM&lt;COLON（parse.y:76-80）；隐式 AND 只对 nearset 列表（132-135）；^ 打 bFirst 要求 offset==0（1648-1652,670）；* 只作用短语末 token（1889-1891,985）；空短语恒不匹配、深度上限 256（20-22,65-67）。节点唯一虚函数 xNext(…,iFrom) 允许跳到 ≥iFrom（expr.c:81）。TERM 快路径借用 poslist 指针（1229-1252）；短语多路 reader 对齐 iPos+i（605-687）；NEAR 滑窗 iMin=iMax-nTerm-nNear 就地裁剪（743-831,767-780）；AND 最大收敛、OR 选最早去重、NOT=child0 AND NOT child1（1332-1427）；detail≠full 短路只判存在（906-918）。<span class="badge inf">推断</span> lazy pull 用 CPU 换内存与早期终止：O(1)/行内存、seek 下推、aux 按需物化。</div>
+<h3>5.8 分词器体系</h3>
+<div class="card"><span class="badge fact">事实</span> 每连接注册、建表绑定，读写共用同一实例；统一入口 sqlite3Fts5Tokenize（config.c:801-826）。v1 注册 unicode61/ascii/trigram，v2 注册 porter（tokenize.c:1460-1495）；默认 unicode61（main.c:3286-3290,3459-3460）。unicode61：ASCII 快表+UTF-8 分类，类别 0 恒 token，折叠 1:1，去变音三档 SIMPLE 跳 HIBIT（tokenize.c:442-544, unicode2.c 全文件）。porter：v2 包装器，默认包 unicode61，&gt;64B 透传，规则由 mkportersteps.tcl 生成内联（552-619,746-1167）。trigram：&lt;3 字符无 token，abc*≡abc，LIKE/GLOB 改写超集+回查，提前实例化判 ePattern（1349-1454, expr.c:364-430）。v1/v2 双向自动适配（main.c:3303-3452）。回调必须按序、COLOCATED=0x0001 表同义词、DONE 视成功（fts5.h:477-498,643-650）。MAX_TOKEN 32768（Int.h:95）。分词串存 sqlite_master，是格式一部分（config.c:298-337）。</div>
+<h3>5.9 事务、影子表、rank 数据链</h3>
+<div class="card"><span class="badge fact">事实</span> 模块 iVersion=4、fts5_api=3、ExtensionApi=4（main.c:3765,3802,2833）。%_content/%_docsize/%_config 由 StorageOpen 建（storage.c:343-417）。external 不建 content 直读外部表（100-142,365-393）；contentless 无 content，DELETE 需 contentless_delete=1（main.c:2013-2023），rowid 靠 docsize 分配（storage.c:959-983）。savepoint 先 flush（main.c:3166-3211）。special 命令 delete-all/rebuild/optimize/merge/integrity-check/flush/配置键（1767-1835）。bm25：k1=1.2 b=0.75 IDF 下限 1e-6 返回 -score（aux.c:669-752）；D 来自 docsize、avgdl 来自 averages，经 auxdata 缓存（main.c:2174-2188,2511-2561, aux.c:601-697）。ORDER BY rank 走内部 sorter 子查询（main.c:1084-1134）。</div>
+
+<h2 id="s6">6. 模块 / 能力地图</h2>
+<table><tr><th>想了解</th><th>去看</th></tr>
+<tr><td>磁盘格式、hash、合并、游标、前缀、tombstone</td><td>notes/fts5-index.md；fts5_index.c:22-318 先读</td></tr>
+<tr><td>MATCH 语法、短语/NEAR、迭代器协议</td><td>notes/fts5-query.md；fts5parse.y 全文 193 行</td></tr>
+<tr><td>unicode61/porter/trigram、自定义 tokenizer</td><td>notes/fts5-tokenizer.md；fts5.h:408-745 对外契约</td></tr>
+<tr><td>虚表方法、xUpdate、事务、special 命令</td><td>notes/fts5-sql.md；main.c:37-61 事务协议</td></tr>
+<tr><td>建表选项、aux、vocab、buffer、工具测试、扩展注册</td><td>notes/fts5-config-aux.md</td></tr></table>
+<svg class="diag" viewBox="0 0 960 200" xmlns="http://www.w3.org/2000/svg" font-size="12" font-family="sans-serif">
+<rect x="10" y="20" width="180" height="60" rx="8" fill="#fff" stroke="#333"/><text x="100" y="45" text-anchor="middle" font-weight="bold">写 SQL 行</text><text x="100" y="63" text-anchor="middle" fill="#555">tokenize → hash</text>
+<rect x="210" y="20" width="180" height="60" rx="8" fill="#e6f4ea" stroke="#137333"/><text x="300" y="45" text-anchor="middle" font-weight="bold">段 / 页 / merge</text><text x="300" y="63" text-anchor="middle" fill="#555">t_data · t_idx</text>
+<rect x="410" y="20" width="180" height="60" rx="8" fill="#fff" stroke="#333"/><text x="500" y="45" text-anchor="middle" font-weight="bold">MATCH 串</text><text x="500" y="63" text-anchor="middle" fill="#555">词法/语法/分词</text>
+<rect x="610" y="20" width="170" height="60" rx="8" fill="#e8f0fe" stroke="#0b57d0"/><text x="695" y="45" text-anchor="middle" font-weight="bold">归并游标</text><text x="695" y="63" text-anchor="middle" fill="#555">rowid 流 + poslist</text>
+<rect x="800" y="20" width="150" height="60" rx="8" fill="#fef7e0" stroke="#b06000"/><text x="875" y="45" text-anchor="middle" font-weight="bold">输出</text><text x="875" y="63" text-anchor="middle" fill="#555">原文/rank/高亮</text>
+<rect x="10" y="110" width="940" height="60" rx="8" fill="#f1f3f4" stroke="#999"/><text x="480" y="133" text-anchor="middle" font-weight="bold">横切：config（建表/配置）· tokenize+unicode2（分词插件）· varint/buffer（编码）· aux（bm25/snippet/highlight）· vocab（查词表）</text><text x="480" y="152" text-anchor="middle" fill="#555">工具 tool/（打包/灌库/计时/转储）· 测试 test/（148 个 .test 三档 detail 重跑）</text>
+</svg>
+
+<h2 id="s7">7. 工程化与测试</h2>
+<div class="card"><span class="badge fact">事实</span> Lemon 解析器构建期生成（main.mk:1775-1780，仓库不存生成物）；amalgamation 由 tool/mkfts5c.tcl 拼单文件 fts5.c（main.mk:1782-1784）。测试 Tcl 经 testfixture 跑，FTS5 148 个 .test + fts5_common.tcl（三档 detail 跑同一批：462,480-482）。工具 6 个 Tcl：打包/灌库/转文本/计时/成本/转储（ext/fts5/tool/）。C 侧测试组件随 SQLITE_TEST 构建：fts5_tcl.c / fts5_test_mi.c / fts5_test_tok.c。<br><span class="badge fact">事实</span> 本次分析未执行构建与测试（只读），通过情况未知，复核用 <code>test/testrunner.tcl fts5%</code>。</div>
+
+<h2 id="s8">8. 扩展点与常见陷阱</h2>
+<div class="grid2">
+<div class="card"><h4>扩展点（插件作者路线）</h4>1. 取 api：<code>SELECT fts5(?1)</code> + bind_pointer("fts5_api_ptr")（示例 fts5_test_mi.c:76-80）<br>2. xCreateTokenizer(_v2) 注册（main.c:3394-3452，iVersion&gt;2 报错）<br>3. xCreateFunction 注册 aux（main.c:3216-3250，先 overload）<br>4. xFindFunction 按名找 aux，首参 cursor id 找回游标再 invoke（3121-3141,2936-2959，api iVersion=4 实例 main.c:2832）<br><span class="badge fact">事实</span> 全见 notes/fts5-config-aux.md §7。</div>
+<div class="card"><h4>常见陷阱</h4><ul><li>t_idx.term 是 BLOB，手写 SQL 必须 <code>CAST('0…' AS BLOB)</code>，TEXT 比较恒空（BLOB&gt;TEXT）。</li><li><code>full-text</code> 不加引号：<code>-</code> 被当列过滤，报 no such column（引号包起来）。</li><li>segid 会复用，不做业务标识；structure 非 per-term 摘要别记反。</li><li>tokenize 串存 sqlite_master，换分词器=换格式，旧库需重建。</li><li>contentless 默认禁 DELETE/UPDATE、无原文导致 snippet/highlight 为空。</li><li>detail≠full 禁短语/NEAR/^/列过滤；columnsize=0 伤 bm25 精度。</li></ul></div>
+</div>
+
+<h2 id="s9">9. 关键文件索引</h2>
+<table><tr><th>文件</th><th>行数</th><th>先读哪</th></tr>
+<tr><td>fts5_index.c</td><td>9590</td><td>:22-318 格式规范；:269-304 rowid 编码；:2691 目录查询；:4483/4564/4599 切页；:4812/5043 合并</td></tr>
+<tr><td>fts5_main.c</td><td>3904</td><td>:37-61 事务协议；:614 xBestIndex；:1450 xFilter；:1941 xUpdate；:1767 special 命令</td></tr>
+<tr><td>fts5_expr.c + fts5parse.y</td><td>3286+193</td><td>parse.y 全文；expr.c:204 词法，:605 短语，:743 NEAR，:1552 First/Next</td></tr>
+<tr><td>fts5_storage.c</td><td>1549</td><td>:343 Open；:988/1069 插入；:1501 Sync；:1248 完整性</td></tr>
+<tr><td>fts5_tokenize.c + unicode2.c</td><td>1496+780</td><td>:1460 注册；:442 主循环；porter :577/1256；trigram :1293/1349</td></tr>
+<tr><td>fts5_config.c</td><td>1125</td><td>:565 解析；:236 选项分派；:920 SetValue；:1051 Load</td></tr>
+<tr><td>fts5_aux.c</td><td>830</td><td>:601 bm25；:242 highlight；:427 snippet</td></tr>
+<tr><td>fts5_hash/buffer/varint/Int.h/h</td><td>590/411/344/959/754</td><td>hash.c:245 写；buffer.c 编码；fts5.h:408-745 对外契约必读</td></tr>
+<tr><td>fts5_vocab.c / test/ / tool/</td><td>853 / 148测 / 6脚本</td><td>vocab.c:13 模式；showfts5.tcl 转储；fts5_decode 调试</td></tr></table>
+
+<h2 id="s10">10. 未解问题摘要（完整见 questions.md）</h2>
+<div class="card"><ul>
+<li><span class="badge unk">未知</span> “distributed b-tree”提法全库 grep 0 命中，应出自官网 fts5.html，仓库无法佐证。</li>
+<li><span class="badge unk">未知</span> 各特性引入版本号（detail=none/columns、tokenizer v2、contentless_delete/unindexed、locale、secure-delete）仓库无记录。</li>
+<li><span class="badge unk">未知</span> secure-delete 全路径（5262-5561）与溢出页差异未逐行读；tombstone 读写细节与查询侧函数名两说未复核。</li>
+<li><span class="badge unk">未知</span> fts5_tcl.c / test_tok / test_mi、vocab detail=columns 计数、integrity-check 清单、反向迭代边界未逐行读。</li>
+<li><span class="badge unk">未知</span> 未跑构建测试：通过情况、性能注释、prefix 三路选择、pgsz/hashsize 调参、delete-merge 效果均未验证。</li>
+</ul>
+<div class="kv">工作树状态：<span class="badge fact">事实</span> 仅 ext/fts5/fts5_aux.c 头部注释行文改动，无逻辑变化。证据总表见 sources.md；模块细节见 notes/ 五份笔记；入门实测见仓库 FTS5-入门与原理.md。</div></div>
+
+<footer>笔记目录 ~/Projects/codemaps/sqlite/：overview.md · architecture.md · notes/fts5-{index,query,tokenizer,sql,config-aux}.md · questions.md · sources.md · architecture.html（本文件，自包含离线可双击打开）</footer>
+</div>
+</body>
+</html>
