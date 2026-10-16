@@ -53,3 +53,15 @@
 
 - 4 个并行 explore 子代理：session 子系统 / adapter+hook / store+search / CLI+bootstrap（各自产出带 file:line 的 1500-1800 词报告，已并入 notes/）。
 - 主线程精读：server.ts 关键段（140-470, 880-1105, 1560-2470, 2553-2702, 3678-3807, 4847-4991）、executor.ts 全文、security.ts 全文、routing-block.mjs 全文、start.mjs 头部、hooks.json、plugin.json、docs/platform-support.md。
+- Prompt engineering 专稿：`notes/prompt-engineering.md`（P1-P6 六个 surface + ADR-0002/0003 + snapshot/directive/auto-injection + 运行时指针文案；静态扫描 `tests/core/server.test.ts:5268-5620` 契约测试）。
+
+## Prompt engineering（新增）
+
+| 结论 | 出处 |
+|---|---|
+| 工具描述 canonical 结构 WHEN→WHEN NOT→RETURNS→EXAMPLE + 8 条禁用词 | docs/adr/0002-tool-description-style.md；tests/core/server.test.ts:5268-5620 |
+| Routing block 模板与 0-3 选型层级 + 子代理 ToolSearch bootstrap | hooks/routing-block.mjs:16-80；hooks/core/routing.mjs:892-916 |
+| CASE A redirect（redirected 开头 + full network access + retry hint）≠ CASE B restriction | docs/adr/0003-routing-deny-reasons.md；hooks/core/routing.mjs:767-889 |
+| 快照 XML（how_to_search + 每节 toolCall）+ 指令 14 节 + auto-injection 500 tokens | src/session/snapshot.ts:475-577；hooks/session-directive.mjs:275-500；hooks/auto-injection.mjs |
+| 运行时指针（indexStdout/intentSearch/节流计数器/BLOCKED flood） | server.ts:1958-2036,2654-2782,3578 |
+| Skills 触发器 + 根 CLAUDE.md 与 configs/claude-code/CLAUDE.md 一致（含 MANDATORY/BLOCKED，与 ADR 管辖域不同） | skills/context-mode/SKILL.md；CLAUDE.md；configs/claude-code/CLAUDE.md |

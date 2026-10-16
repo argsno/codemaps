@@ -127,6 +127,7 @@
 - **ADR-0003**：deny 理由文案（为什么某命令被路由改写）。
 - **ADR-0004**：统计口径 = 严格压缩公式（`reduction = 1 - returned/processed`，server.ts:1032-1040）。
 - **fail-open 原则**：hook 永远 exit 0；安全检测抛异常时放行（server 侧注释明确"hooks 才是主执法层"，server.ts:1127-1131）；MCP 未就绪时不重定向。
+- **提示词分层**：详见 `notes/prompt-engineering.md`——P1 工具描述（ADR-0002 的 WHEN/WHEN NOT/RETURNS/EXAMPLE + 8 条禁用词 + contract test）/ P2 routing block（`routing-block.mjs:16-80` 的 0-3 选型层级 + 子代理 bootstrap）/ P3 重定向≠拒绝（ADR-0003 CASE A/B，`routing.mjs:767-889`）/ P4 快照+指令+auto-injection（`snapshot.ts:475-577`、`session-directive.mjs:275-500`、500 tokens 预算）/ P5 运行时指针与节流文案（`server.ts:1958-2036,2654-2782`）/ P6 Skills 与 `CLAUDE.md` 静态指令（含与 ADR 字面冲突的 MANDATORY/BLOCKED，推断为刻意分层，未证实）。
 
 ## 8. 模块地图（代码量与职责）
 

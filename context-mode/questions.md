@@ -12,6 +12,9 @@
 6. 🟡 **tier2 e2e smoke**（真实 LLM 冒烟）目前只实现了 Pi，claude-code/opencode 是占位（.github/workflows/tier2-e2e-smoke.yml）——其他平台的真实端到端验证缺失。
 7. 🟡 **项目开发方式**：2232 次提交、大量 "Issue #NNN" 注释、issue 编号已到 #860+，且近期提交大量由 CI 自动重建 bundle。是否为 AI 重度参与开发（CONTRIBUTING/CLAUDE.md 的工作流）值得再从 CONTRIBUTING.md 深挖（本次未细读 19KB 的 CONTRIBUTING.md）。
 8. 🟡 **stats.json 用户数**（682.1k+）由 update-stats.yml 每 6 小时自动更新，数据来源是外部统计，无法在本仓库核实。
+9. 🟡 **P6 静态指令与 ADR 的字面冲突**：`CLAUDE.md` / `configs/claude-code/CLAUDE.md` 仍用 `MANDATORY`/`BLOCKED — do NOT attempt`（与 ADR-0002/0003 在 P1/P3 禁用的词相同）。推断是刻意分层（静态指令允许 trainer 口吻，运行时选型线索必须肯定式），但 ADR 未明说管辖域，需问作者。详见 `notes/prompt-engineering.md:§6`。
+10. 🟡 **实证底稿缺失**：ADR-0002/0003 引用的 `TOOL-DESCRIPTIONS-AUDIT.md`（38 trials × 6 probes 原始数据）与 `GRILL-Q1-VERDICT.md` 不在本仓库——"38 次 A/B"只能采信 ADR 转述，无法复核。
+11. 🟡 **其余 17 平台静态模板未核**：本次只 diff 了根 `CLAUDE.md` vs `configs/claude-code/CLAUDE.md`（一致），`configs/*/SYSTEM.md|AGENTS.md` 的 BLOCKED/MANDATORY 残留量未统计。
 
 ## 已澄清
 
